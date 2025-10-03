@@ -1,0 +1,5 @@
+command:
+  - "uvicorn"
+  - "backend.app:app"
+  - "--workers"
+  - "4"

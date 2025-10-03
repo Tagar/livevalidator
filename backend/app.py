@@ -1,18 +1,22 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+import os
+import json
+from pathlib import Path
+from typing import Optional, Literal
+
+from fastapi import FastAPI, APIRouter, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from typing import Optional, Literal
-from datetime import datetime
-from db import fetch, fetchrow, fetchval, execute
+from pydantic import BaseModel, Field
 
-import os
+from backend.db import fetch, fetchrow, fetchval, execute
 
 app = FastAPI(title="LiveValidator Control Plane API", version="0.1")
 
+# Keep API isolated under /api so SPA routing can own "/"
 api = APIRouter(prefix="/api")
 
+# If frontend and API are same-origin in prod, you can tighten allow_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,12 +36,12 @@ class DatasetIn(BaseModel):
     tgt_catalog: Optional[str] = None
     tgt_schema: Optional[str] = None
     tgt_table: Optional[str] = None
-    compare_mode: Literal['except_all', 'primary_key', 'hash'] = 'except_all'
+    compare_mode: Literal['except_all','primary_key','hash'] = 'except_all'
     pk_columns: Optional[list[str]] = None
     watermark_column: Optional[str] = None
-    include_columns: list[str] = []
-    exclude_columns: list[str] = []
-    options: dict = {}
+    include_columns: list[str] = Field(default_factory=list)
+    exclude_columns: list[str] = Field(default_factory=list)
+    options: dict = Field(default_factory=dict)
     is_active: bool = True
     updated_by: str
 
@@ -51,7 +55,7 @@ class DatasetUpdate(BaseModel):
     tgt_catalog: Optional[str] = None
     tgt_schema: Optional[str] = None
     tgt_table: Optional[str] = None
-    compare_mode: Optional[Literal['except_all', 'primary_key', 'hash']] = None
+    compare_mode: Optional[Literal['except_all','primary_key','hash']] = None
     pk_columns: Optional[list[str]] = None
     watermark_column: Optional[str] = None
     include_columns: Optional[list[str]] = None
@@ -69,9 +73,9 @@ class QueryIn(BaseModel):
     tgt_sql: str
     compare_mode: Literal['except_all','primary_key','hash'] = 'except_all'
     pk_columns: Optional[list[str]] = None
-    include_columns: list[str] = []
-    exclude_columns: list[str] = []
-    options: dict = {}
+    include_columns: list[str] = Field(default_factory=list)
+    exclude_columns: list[str] = Field(default_factory=list)
+    options: dict = Field(default_factory=dict)
     is_active: bool = True
     updated_by: str
 
@@ -117,7 +121,7 @@ class TriggerIn(BaseModel):
     entity_id: int
     requested_by: str
     priority: int = 100
-    params: dict = {}
+    params: dict = Field(default_factory=dict)
 
 # ---------- Helpers ----------
 async def row_or_404(sql: str, *args):
@@ -154,7 +158,7 @@ async def create_dataset(body: DatasetIn):
     body.name, body.src_system_id, body.src_catalog, body.src_schema, body.src_table,
     body.tgt_system_id, body.tgt_catalog, body.tgt_schema, body.tgt_table,
     body.compare_mode, body.pk_columns, body.watermark_column, body.include_columns, body.exclude_columns,
-    body.options, body.is_active, body.updated_by)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by)
     return dict(row)
 
 @api.get("/datasets/{id}")
@@ -189,7 +193,7 @@ async def update_dataset(id: int, body: DatasetUpdate):
     id, body.src_system_id, body.src_catalog, body.src_schema, body.src_table,
     body.tgt_system_id, body.tgt_catalog, body.tgt_schema, body.tgt_table,
     body.compare_mode, body.pk_columns, body.watermark_column, body.include_columns, body.exclude_columns,
-    body.options, body.is_active, body.updated_by, body.version)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.datasets WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})
@@ -204,7 +208,10 @@ async def delete_dataset(id: int):
 @api.get("/queries")
 async def list_queries(q: str | None = None):
     if q:
-        rows = await fetch("SELECT * FROM control.compare_queries WHERE is_active AND name ILIKE $1 ORDER BY name", f"%{q}%")
+        rows = await fetch(
+            "SELECT * FROM control.compare_queries WHERE is_active AND name ILIKE $1 ORDER BY name",
+            f"%{q}%"
+        )
     else:
         rows = await fetch("SELECT * FROM control.compare_queries WHERE is_active ORDER BY name")
     return [dict(r) for r in rows]
@@ -222,7 +229,7 @@ async def create_query(body: QueryIn):
     """,
     body.name, body.src_system_id, body.src_sql, body.tgt_system_id, body.tgt_sql,
     body.compare_mode, body.pk_columns, body.include_columns, body.exclude_columns,
-    body.options, body.is_active, body.updated_by)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by)
     return dict(row)
 
 @api.get("/queries/{id}")
@@ -251,7 +258,7 @@ async def update_query(id: int, body: QueryUpdate):
     """,
     id, body.src_system_id, body.src_sql, body.tgt_system_id, body.tgt_sql,
     body.compare_mode, body.pk_columns, body.include_columns, body.exclude_columns,
-    body.options, body.is_active, body.updated_by, body.version)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.compare_queries WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})
@@ -321,31 +328,117 @@ async def trigger_now(t: TriggerIn):
         INSERT INTO control.triggers (source, schedule_id, entity_type, entity_id, priority, requested_by, params)
         VALUES ('manual', NULL, $1, $2, $3, $4, $5)
         RETURNING *
-    """, t.entity_type, t.entity_id, t.priority, t.requested_by, t.params)
+    """, t.entity_type, t.entity_id, t.priority, t.requested_by, json.dumps(t.params) if isinstance(t.params, (dict, list)) else t.params)
     return dict(row)
 
-# ---------- Wire API and serve React ----------
+# ---------- Wire API ----------
 app.include_router(api)
 
-# Point to your built SPA. For Vite default is "frontend/dist"; for CRA use "frontend/build".
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.getenv("FRONTEND_DIR") or os.path.join(BASE_DIR, "..", "frontend", "dist")  # Vite
+# ---------- Robust SPA mounting (works from backend/ or anywhere) ----------
+def _pick_frontend_dir() -> Optional[Path]:
+    base = Path(__file__).resolve().parent
+    env = os.getenv("FRONTEND_DIR")
+    candidates = []
 
-if not os.path.isdir(FRONTEND_DIR):
-    # Helpful hint during startup if you forgot to build
-    print(f"[warn] FRONTEND_DIR not found: {FRONTEND_DIR}. Did you run `npm run build`?")
+    if env:
+        candidates.append(Path(env))
 
-# Serve static files (JS/CSS/assets) and index.html at "/"
-app.mount(
-    "/",
-    StaticFiles(directory=FRONTEND_DIR, html=True),
-    name="spa",
-)
+    # Common layouts:
+    # repo/
+    #   backend/app.py
+    #   frontend/dist  (Vite)
+    #   frontend/build (CRA)
+    candidates += [
+        base / ".." / "frontend" / "dist",   # Vite (sibling)
+        base / ".." / "frontend" / "build",  # CRA (sibling)
+        base / "frontend" / "dist",          # Vite (nested)
+        base / "frontend" / "build",         # CRA (nested)
+        base / ".." / "dist",                # direct sibling dist
+        base / ".." / "build",               # direct sibling build
+        base / "dist",
+        base / "build",
+    ]
 
-# SPA history fallback for client-side routes (e.g., /settings, /queries/123)
-@app.get("/{full_path:path}")
-async def spa_fallback(full_path: str):
-    index_path = os.path.join(FRONTEND_DIR, "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-    raise HTTPException(status_code=404, detail="index.html not found")
+    for p in candidates:
+        p = p.resolve()
+        if (p / "index.html").exists():
+            print(f"[info] Serving SPA from: {p}")
+            return p
+
+    print("[warn] Could not find a built frontend. Looked in:")
+    for p in candidates:
+        print(f"  - {p}")
+    return None
+
+_FRONTEND_DIR = _pick_frontend_dir()
+
+
+# --- DEBUG ONLY (remove later) -----------------------------------------------
+from fastapi.responses import PlainTextResponse, JSONResponse
+
+@app.get("/__where", response_class=PlainTextResponse)
+def where():
+    return f"FRONTEND_DIR = {_FRONTEND_DIR}"
+
+@app.get("/__ls", response_class=JSONResponse)
+def ls():
+    base = str(_FRONTEND_DIR) if _FRONTEND_DIR else None
+    def safe_list(p):
+        try:
+            return sorted(os.listdir(p))
+        except Exception:
+            return None
+    return {
+        "base": base,
+        "has_index_html": bool(_FRONTEND_DIR and (_FRONTEND_DIR / "index.html").exists()),
+        "assets_dir": str(_FRONTEND_DIR / "assets") if _FRONTEND_DIR else None,
+        "assets_list": safe_list(_FRONTEND_DIR / "assets") if _FRONTEND_DIR else None,
+        "static_dir": str(_FRONTEND_DIR / "static") if _FRONTEND_DIR else None,
+        "static_js_list": safe_list(_FRONTEND_DIR / "static" / "js") if _FRONTEND_DIR else None,
+        "static_css_list": safe_list(_FRONTEND_DIR / "static" / "css") if _FRONTEND_DIR else None,
+    }
+
+@app.get("/__index", response_class=PlainTextResponse)
+def show_index():
+    p = _FRONTEND_DIR / "index.html" if _FRONTEND_DIR else None
+    return p.read_text(encoding="utf-8") if p and p.exists() else "index.html missing"
+# -----------------------------------------------------------------------------
+
+
+
+
+if _FRONTEND_DIR:
+    # Serve static files (JS/CSS/assets) and index.html at "/"
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="spa")
+
+    assets_dir = _FRONTEND_DIR / "assets"
+    static_dir = _FRONTEND_DIR / "static"
+
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+        print(f"[info] Mounted /assets -> {assets_dir}")
+
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        print(f"[info] Mounted /static -> {static_dir}")
+
+    # SPA history fallback for client-side routes (e.g., /settings, /queries/123)
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        index_path = _FRONTEND_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path))
+        raise HTTPException(status_code=404, detail="index.html not found")
+
+    # Optional: silence favicon 404s if missing
+    @app.get("/favicon.ico")
+    def favicon():
+        ico = _FRONTEND_DIR / "favicon.ico"
+        return FileResponse(str(ico)) if ico.exists() else Response(status_code=204)
+else:
+    @app.get("/")
+    def _missing_build():
+        return {
+            "error": "frontend_build_not_found",
+            "hint": "Set FRONTEND_DIR or run `npm run build` in your frontend and place index.html under one of the common locations."
+        }
