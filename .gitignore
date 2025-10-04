@@ -1,4 +1,6 @@
 /frontend/node_modules/
 /venv/
 /backend/livevalidator.egg-info/
-/frontend/node_modules/
+.env
+.env.local
+*.pem

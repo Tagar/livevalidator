@@ -3,3 +3,15 @@ command:
   - "backend.app:app"
   - "--workers"
   - "4"
+
+env:
+  # Database Configuration
+  # Update these values in the Databricks Apps UI under Environment Variables
+  - name: DB_DSN
+    value: "postgresql://apprunner:beepboop123@instance-bbdc66b7-47d1-48a0-b2bd-20992dfca609.database.cloud.databricks.com:5432/databricks_postgres"
+  
+  - name: DB_USE_SSL
+    value: "true"
+  
+  - name: DB_SSL_CA_FILE
+    value: "backend/databricks-ca.pem"
