@@ -10,6 +10,7 @@ CREATE TABLE control.systems (
   user_secret_key   TEXT,
   pass_secret_key   TEXT,
   jdbc_string       TEXT,
+  concurrency       INTEGER NOT NULL DEFAULT -1,
   options           JSONB NOT NULL DEFAULT '{}'::jsonb,
   is_active         BOOLEAN NOT NULL DEFAULT TRUE,
   created_by        TEXT NOT NULL,
@@ -107,14 +108,14 @@ CREATE TABLE control.triggers (
   id               BIGSERIAL PRIMARY KEY,
   source           TEXT NOT NULL,                -- 'manual' | 'schedule' | 'bulk_job'
   schedule_id      BIGINT REFERENCES control.schedules(id),
-  entity_type      TEXT NOT NULL,                -- 'dataset' | 'compare_query'
+  entity_type      TEXT NOT NULL,                -- 'table' | 'compare_query'
   entity_id        BIGINT NOT NULL,
 
   priority         INTEGER NOT NULL DEFAULT 100, -- lower = sooner
   requested_by     TEXT NOT NULL,
   requested_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  status           TEXT NOT NULL DEFAULT 'queued',  -- 'queued'|'running'|'succeeded'|'failed'|'canceled'
+  status           TEXT NOT NULL DEFAULT 'queued',  -- 'queued' | 'running' (active only)
   attempts         INTEGER NOT NULL DEFAULT 0,
   last_error       TEXT,
   worker_id        TEXT,                         -- advisory: who picked it
@@ -122,10 +123,93 @@ CREATE TABLE control.triggers (
   started_at       TIMESTAMPTZ,
   finished_at      TIMESTAMPTZ,
 
-  params           JSONB NOT NULL DEFAULT '{}'::jsonb -- watermark overrides, dry-run, etc.
+  params           JSONB NOT NULL DEFAULT '{}'::jsonb, -- watermark overrides, dry-run, etc.
+  
+  -- Databricks workflow tracking
+  databricks_run_id  TEXT,
+  databricks_run_url TEXT
 );
 
 CREATE INDEX triggers_ready_idx ON control.triggers (status, priority);
+
+-- 7) Validation history (completed validations, archived after 30 days)
+CREATE TABLE control.validation_history (
+  id                BIGSERIAL PRIMARY KEY,
+  
+  -- Link back to original trigger (before it was deleted)
+  trigger_id        BIGINT NOT NULL,
+  entity_type       TEXT NOT NULL,  -- 'table' | 'compare_query'
+  entity_id         BIGINT NOT NULL,
+  entity_name       TEXT NOT NULL,  -- Denormalized for easier display
+  
+  -- Execution metadata
+  source           TEXT NOT NULL,     -- 'manual' | 'schedule' | 'bulk_job'
+  schedule_id      BIGINT REFERENCES control.schedules(id),
+  requested_by     TEXT NOT NULL,
+  requested_at     TIMESTAMPTZ NOT NULL,
+  started_at       TIMESTAMPTZ NOT NULL,
+  finished_at      TIMESTAMPTZ NOT NULL,
+  duration_seconds INTEGER GENERATED ALWAYS AS (EXTRACT(EPOCH FROM (finished_at - started_at))::INTEGER) STORED,
+  
+  -- Systems (denormalized for easier querying after systems are deleted/changed)
+  source_system_id  BIGINT NOT NULL,
+  target_system_id  BIGINT NOT NULL,
+  source_system_name TEXT NOT NULL,
+  target_system_name TEXT NOT NULL,
+  
+  -- Validation configuration (what was run)
+  source_table      TEXT,  -- For tables (schema.table format)
+  target_table      TEXT,  -- For tables (schema.table format)
+  sql_query         TEXT,  -- For queries
+  compare_mode      TEXT NOT NULL,
+  pk_columns        TEXT[],
+  exclude_columns   TEXT[],
+  
+  -- Validation results
+  status            TEXT NOT NULL,  -- 'succeeded' | 'failed' | 'canceled'
+  
+  -- Schema validation
+  schema_match      BOOLEAN,
+  schema_details    JSONB,  -- {columns_matched: [...], columns_missing: [...], columns_extra: [...]}
+  
+  -- Row count validation
+  row_count_source  BIGINT,
+  row_count_target  BIGINT,
+  row_count_match   BOOLEAN,
+  
+  -- Row-level validation (only if row counts match)
+  rows_compared     BIGINT,
+  rows_matched      BIGINT,
+  rows_different    BIGINT,
+  difference_pct    NUMERIC(5,2) GENERATED ALWAYS AS (
+    CASE WHEN rows_compared > 0 
+    THEN (rows_different::NUMERIC / rows_compared * 100)::NUMERIC(5,2)
+    ELSE 0 END
+  ) STORED,
+  
+  -- Sample differences (limited for UI display)
+  sample_differences JSONB,  -- [{row_key: ..., column: ..., src_val: ..., tgt_val: ...}, ...] (max 100)
+  
+  -- Error handling
+  error_message     TEXT,
+  error_details     JSONB,
+  
+  -- Databricks tracking
+  databricks_run_id TEXT NOT NULL,
+  databricks_run_url TEXT,
+  
+  -- Full raw result (for debugging)
+  full_result       JSONB,
+  
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Indexes for common queries
+CREATE INDEX validation_history_entity_idx ON control.validation_history (entity_type, entity_id);
+CREATE INDEX validation_history_time_idx ON control.validation_history (finished_at DESC);
+CREATE INDEX validation_history_status_idx ON control.validation_history (status);
+CREATE INDEX validation_history_schedule_idx ON control.validation_history (schedule_id) WHERE schedule_id IS NOT NULL;
+CREATE INDEX validation_history_created_at_idx ON control.validation_history (created_at DESC);
 
 -- 8) Tags for organization / filters in UI
 CREATE TABLE control.tags (

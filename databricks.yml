@@ -1,0 +1,31 @@
+bundle:
+  name: LiveValidator
+
+variables:
+  backend_api_url:
+    description: "URL of the LiveValidator backend API"
+    default: "https://live-validator-2263248446072504.aws.databricksapps.com"
+
+targets:
+  migr-dev:
+    mode: development
+    workspace:
+      host: https://dbc-your-workspace-id.cloud.databricks.com
+    variables:
+      backend_api_url: "http://localhost:8000"
+  
+  migr-prod:
+    default: true
+    mode: production
+    workspace:
+      host: https://dbc-d723fd35-120a.cloud.databricks.com/
+    variables:
+      backend_api_url: "https://live-validator-2263248446072504.aws.databricksapps.com"
+    workspace:
+      root_path: /Workspace/LiveValidator
+    permissions:
+      - level: CAN_MANAGE
+        group_name: 1dp-migration-prd-admin
+
+include:
+  - resources/*.yml

@@ -1,0 +1,47 @@
+resources:
+  jobs:
+    run_validation:
+      name: "[LiveValidator] Run Validation"
+      
+      tasks:
+        - task_key: validate
+          notebook_task:
+            notebook_path: ../jobs/run_validation.py
+            base_parameters:
+              backend_api_url: ${var.backend_api_url}
+          
+          timeout_seconds: 3600
+          max_retries: 0
+      
+      # Use serverless compute
+      job_clusters: []
+      
+      parameters:
+        - name: trigger_id
+          default: ""
+        - name: name
+          default: ""
+        - name: source_system_id
+          default: ""
+        - name: target_system_id
+          default: ""
+        - name: source_table
+          default: ""
+        - name: target_table
+          default: ""
+        - name: sql
+          default: ""
+        - name: compare_mode
+          default: "except_all"
+        - name: pk_columns
+          default: ""
+        - name: include_columns
+          default: ""
+        - name: exclude_columns
+          default: ""
+        - name: options
+          default: "{}"
+      
+      tags:
+        application: livevalidator
+        component: validation

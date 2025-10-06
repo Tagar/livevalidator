@@ -101,7 +101,41 @@ export const bindingService = {
  * Trigger operations
  */
 export const triggerService = {
+  list: (status) => {
+    const url = status ? `/api/triggers?status=${status}` : "/api/triggers";
+    return fetch(url).then(r => r.json());
+  },
   create: (entityType, entityId) => 
     apiCall("POST", "/api/triggers", { entity_type: entityType, entity_id: entityId, requested_by: DEFAULT_USER }),
+  cancel: (id) => apiCall("DELETE", `/api/triggers/${id}`),
+  queueStatus: () => fetch("/api/queue-status").then(r => r.json()),
 };
 
+/**
+ * Validation history operations
+ */
+export const validationService = {
+  list: (params = {}) => {
+    const queryParams = new URLSearchParams();
+    if (params.entity_type) queryParams.append('entity_type', params.entity_type);
+    if (params.entity_id) queryParams.append('entity_id', params.entity_id);
+    if (params.status) queryParams.append('status', params.status);
+    if (params.schedule_id) queryParams.append('schedule_id', params.schedule_id);
+    if (params.limit) queryParams.append('limit', params.limit);
+    if (params.offset) queryParams.append('offset', params.offset);
+    const url = `/api/validation-history${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    return fetch(url).then(r => r.json());
+  },
+  get: (id) => apiCall("GET", `/api/validation-history/${id}`),
+  getLatest: (entityType, entityId) => 
+    fetch(`/api/validation-history/entity/${entityType}/${entityId}/latest`).then(r => r.json()),
+};
+
+/**
+ * Unified API object
+ */
+export const API = {
+  getTimezones: () => fetch("/api/timezones").then(r => r.json()),
+  initializeDatabase: () => apiCall("POST", "/api/initialize-database"),
+  resetDatabase: () => apiCall("POST", "/api/reset-database"),
+};

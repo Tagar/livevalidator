@@ -87,7 +87,7 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
 
   return (
     <div ref={backdropRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} className="fixed inset-0 bg-black/75 flex items-center justify-center z-50">
-      <div className="bg-charcoal-500 rounded-xl w-full max-w-4xl shadow-2xl max-h-[90vh] overflow-y-auto border border-charcoal-200">
+      <div className={`bg-charcoal-500 rounded-xl w-full ${parsed ? 'max-w-[90vw]' : 'max-w-4xl'} shadow-2xl max-h-[90vh] overflow-y-auto border border-charcoal-200`}>
         <div className="sticky top-0 bg-charcoal-500 px-6 py-4 border-b border-charcoal-200 flex justify-between items-center">
           <h3 className="m-0 text-rust text-lg font-semibold">Upload CSV - {type === 'tables' ? 'Tables' : 'Queries'}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-200 text-2xl leading-none border-0 bg-transparent cursor-pointer">&times;</button>
@@ -223,20 +223,20 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
                   <thead className="text-gray-400 border-b border-charcoal-200">
                     <tr>
                       <th className="text-left p-2">Row</th>
-                      <th className="text-left p-2">Name</th>
-                      {type === 'tables' && <th className="text-left p-2">Schema.Table</th>}
-                      {type === 'queries' && <th className="text-left p-2">SQL</th>}
-                      <th className="text-left p-2">Schedule</th>
+                      {Object.keys(parsed[0] || {}).map(key => (
+                        <th key={key} className="text-left p-2">{key}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {parsed.map((row, i) => (
                       <tr key={i} className="border-b border-charcoal-300/30">
                         <td className="p-2">{i + 1}</td>
-                        <td className="p-2">{row.name}</td>
-                        {type === 'tables' && <td className="p-2">{row.src_schema}.{row.src_table}</td>}
-                        {type === 'queries' && <td className="p-2 text-xs max-w-xs truncate">{row.sql}</td>}
-                        <td className="p-2">{row.schedule_name}</td>
+                        {Object.keys(parsed[0] || {}).map(key => (
+                          <td key={key} className="p-2 max-w-xs truncate" title={row[key]}>
+                            {Array.isArray(row[key]) ? row[key].join(', ') : row[key]}
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>

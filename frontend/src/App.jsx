@@ -15,6 +15,17 @@ import {
   SystemModal
 } from './components/modals';
 
+// Views
+import {
+  ValidationResultsView,
+  TablesView,
+  QueriesView,
+  QueueView,
+  SchedulesView,
+  SystemsView,
+  SetupView
+} from './views';
+
 // Services
 import { apiCall } from './services/api';
 
@@ -65,14 +76,38 @@ const InlineEditCell = ({ value, onSave, onCancel, type = "text", options = [] }
 };
 
 export default function App() {
-  const [view, setView] = useState('tables');
+  const [view, setView] = useState('results');
   const [conflict, setConflict] = useState(null);
+  const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: string }
   
   // Data fetching
   const tbl = useFetch(`/api/tables`, []);
   const qs = useFetch(`/api/queries`, []);
   const sc = useFetch(`/api/schedules`, []);
   const sys = useFetch(`/api/systems`, []);
+  const validations = useFetch(`/api/validation-history?limit=100`, []);
+  const triggers = useFetch(`/api/triggers`, []);
+  const queueStats = useFetch(`/api/queue-status`, {});
+  
+  // Auto-refresh for validation results and queue views
+  useEffect(() => {
+    if (view === 'results') {
+      const interval = setInterval(() => {
+        validations.refresh();
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [view]);
+  
+  useEffect(() => {
+    if (view === 'queue') {
+      const interval = setInterval(() => {
+        triggers.refresh();
+        queueStats.refresh();
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [view]);
   
   // Check if database needs initialization
   const setupRequired = [tbl.error, qs.error, sc.error, sys.error].some(
@@ -333,9 +368,13 @@ export default function App() {
   const triggerNow = async (entity_type, entity_id) => {
     try {
       await apiCall("POST", `/api/triggers`, { entity_type, entity_id, requested_by: DEFAULT_USER });
-      alert("Triggered successfully!");
+      setNotification({ type: 'success', message: '✓ Validation queued successfully!' });
+      triggers.refresh();
+      queueStats.refresh();
+      setTimeout(() => setNotification(null), 5000);
     } catch (err) {
-      alert(`Error: ${err.message}`);
+      setNotification({ type: 'error', message: `Error: ${err.message}` });
+      setTimeout(() => setNotification(null), 8000);
     }
   };
 
@@ -393,6 +432,25 @@ export default function App() {
           </div>
         )}
 
+        {/* Notification Toast */}
+        {notification && (
+          <div className={`fixed top-4 right-4 z-50 max-w-md rounded-lg shadow-2xl border-2 p-4 flex items-start gap-3 animate-slide-in ${
+            notification.type === 'success' 
+              ? 'bg-green-900/95 border-green-600 text-green-100' 
+              : 'bg-red-900/95 border-red-600 text-red-100'
+          }`}>
+            <div className="flex-1">
+              <p className="font-medium">{notification.message}</p>
+            </div>
+            <button 
+              onClick={() => setNotification(null)}
+              className="text-gray-300 hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Modals */}
         {conflict && <VersionConflictDialog current={conflict.row} onRefresh={conflict.onRefresh} onCancel={conflict.onCancel} />}
         {editingTable && <TableModal table={editingTable} systems={sys.data} schedules={sc.data} onSave={handleTableSave} onClose={() => setEditingTable(null)} />}
@@ -401,385 +459,90 @@ export default function App() {
         {editingSystem && <SystemModal system={editingSystem} onSave={handleSystemSave} onClose={() => setEditingSystem(null)} />}
         {uploadCSVType && <UploadCSVModal type={uploadCSVType} systems={sys.data} schedules={sc.data} onClose={() => setUploadCSVType(null)} onUpload={refreshAll} />}
 
+        {/* Validation Results View */}
+        {view === 'results' && (
+          <ValidationResultsView 
+            data={validations.data}
+            loading={validations.loading}
+            error={validations.error}
+            onClearError={validations.clearError}
+          />
+        )}
+
         {/* Tables View */}
         {view === 'tables' && (
-          <>
-            {tbl.error && tbl.error.action !== "setup_required" && <ErrorBox message={tbl.error.message} onClose={tbl.clearError} />}
-            <h2 className="text-2xl font-semibold text-rust-light mb-4">Tables</h2>
-            <div className="mb-3 flex gap-2">
-              <button onClick={() => setEditingTable({})} className="px-3 py-2 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500">Add Table</button>
-              <button onClick={() => setUploadCSVType('tables')} className="px-3 py-2 bg-rust text-gray-100 border-0 rounded-md cursor-pointer hover:bg-rust-light">📂 Upload CSV</button>
-        </div>
-            {tbl.loading ? <p className="text-gray-400">Loading…</p> : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b-2 border-charcoal-200">
-                      <th className="text-left p-2 text-gray-200 font-medium">Name</th>
-                      <th className="text-left p-2 text-gray-200 font-medium">Source Table</th>
-                      <th className="text-left p-2 text-gray-200 font-medium">Target Table</th>
-                      <th className="text-left p-2 text-gray-200 font-medium">Source</th>
-                      <th className="text-left p-2 text-gray-200 font-medium">Target</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Compare Mode</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Watermark</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">PK Columns</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Include</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Exclude</th>
-                    <th className="text-left p-2 text-gray-400 font-medium">Schedules</th>
-                    <th className="text-left p-2 text-gray-200 font-medium">Actions</th>
-                  </tr>
-                </thead>
-            <tbody>
-                  {tbl.data.map(row => {
-                    const entityBindings = bindings[`dataset_${row.id}`] || [];
-                    const scheduleNames = entityBindings.map(b => sc.data.find(s => s.id === b.schedule_id)?.name).filter(Boolean).join(', ');
-                    return (
-                    <tr key={row.id} className="border-b border-charcoal-200">
-                      <td className="p-2 text-gray-100">{row.name}</td>
-                      <td className="p-2 text-gray-500 text-sm">{row.src_schema}.{row.src_table}</td>
-                      <td className="p-2 text-gray-500 text-sm">{row.tgt_schema}.{row.tgt_table}</td>
-                      <td className="p-2 text-gray-100">{renderCell('tables', row, 'src_system_id', sys.data)}</td>
-                      <td className="p-2 text-gray-100">{renderCell('tables', row, 'tgt_system_id', sys.data)}</td>
-                      <td className="p-2 text-gray-300 text-sm">{row.compare_mode}</td>
-                      <td className="p-2 text-gray-300 text-sm">{row.watermark_column || '-'}</td>
-                      <td className="p-2 text-gray-300 text-xs">{row.pk_columns?.join(', ') || '-'}</td>
-                      <td className="p-2 text-gray-300 text-xs">{row.include_columns?.join(', ') || '-'}</td>
-                      <td className="p-2 text-gray-300 text-xs">{row.exclude_columns?.join(', ') || '-'}</td>
-                      <td className="p-2 text-purple-400 text-xs">{scheduleNames || '-'}</td>
-                        <td className="p-2">
-                          <button onClick={() => setEditingTable(row)} className="px-2 py-1 text-xs bg-purple-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-purple-500 mr-1">Edit</button>
-                          <button onClick={() => handleDelete('tables', row.id)} className="px-2 py-1 text-xs bg-red-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-red-500 mr-1">Del</button>
-                          <button onClick={() => triggerNow('dataset', row.id)} className="px-2 py-1 text-xs bg-green-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-green-500">▶️</button>
-                  </td>
-                </tr>
-                    );
-                  })}
-            </tbody>
-          </table>
-              </div>
-            )}
-          </>
+          <TablesView 
+            data={tbl.data}
+            loading={tbl.loading}
+            error={tbl.error}
+            systems={sys.data}
+            schedules={sc.data}
+            bindings={bindings}
+            onEdit={setEditingTable}
+            onDelete={handleDelete}
+            onTrigger={triggerNow}
+            onUploadCSV={() => setUploadCSVType('tables')}
+            onClearError={tbl.clearError}
+            renderCell={renderCell}
+          />
         )}
 
         {/* Queries View */}
         {view === 'queries' && (
-          <>
-            {qs.error && qs.error.action !== "setup_required" && <ErrorBox message={qs.error.message} onClose={qs.clearError} />}
-            <h2 className="text-2xl font-semibold text-rust-light mb-4">Compare Queries</h2>
-            <div className="mb-3 flex gap-2">
-              <button onClick={() => setEditingQuery({})} className="px-3 py-2 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500">Add Query</button>
-              <button onClick={() => setUploadCSVType('queries')} className="px-3 py-2 bg-rust text-gray-100 border-0 rounded-md cursor-pointer hover:bg-rust-light">📂 Upload CSV</button>
-        </div>
-            {qs.loading ? <p className="text-gray-400">Loading…</p> : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b-2 border-charcoal-200">
-                      <th className="text-left p-2 text-gray-400 font-medium">Name</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Source</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Target</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">SQL</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Compare Mode</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">PK Columns</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Include</th>
-                      <th className="text-left p-2 text-gray-400 font-medium">Exclude</th>
-                    <th className="text-left p-2 text-gray-400 font-medium">Schedules</th>
-                    <th className="text-left p-2 text-gray-400 font-medium">Actions</th>
-                  </tr>
-                </thead>
-            <tbody>
-                  {qs.data.map(row => {
-                    const entityBindings = bindings[`compare_query_${row.id}`] || [];
-                    const scheduleNames = entityBindings.map(b => sc.data.find(s => s.id === b.schedule_id)?.name).filter(Boolean).join(', ');
-                    return (
-                    <tr key={row.id} className="border-b border-charcoal-200">
-                      <td className="p-2 text-gray-100">{row.name}</td>
-                      <td className="p-2 text-gray-200">{renderCell('queries', row, 'src_system_id', sys.data)}</td>
-                      <td className="p-2 text-gray-200">{renderCell('queries', row, 'tgt_system_id', sys.data)}</td>
-                      <td className="p-2 text-gray-400 text-xs max-w-xs truncate font-mono">{row.src_sql || row.sql}</td>
-                      <td className="p-2 text-gray-300 text-sm">{row.compare_mode}</td>
-                      <td className="p-2 text-gray-300 text-xs">{row.pk_columns?.join(', ') || '-'}</td>
-                      <td className="p-2 text-purple-400 text-xs">{scheduleNames || '-'}</td>
-                        <td className="p-2">
-                          <button onClick={() => setEditingQuery(row)} className="px-2 py-1 text-xs bg-purple-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-purple-500 mr-1">Edit</button>
-                          <button onClick={() => handleDelete('queries', row.id)} className="px-2 py-1 text-xs bg-red-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-red-500 mr-1">Del</button>
-                          <button onClick={() => triggerNow('compare_query', row.id)} className="px-2 py-1 text-xs bg-green-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-green-500">▶️</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
+          <QueriesView 
+            data={qs.data}
+            loading={qs.loading}
+            error={qs.error}
+            systems={sys.data}
+            schedules={sc.data}
+            bindings={bindings}
+            onEdit={setEditingQuery}
+            onDelete={handleDelete}
+            onTrigger={triggerNow}
+            onUploadCSV={() => setUploadCSVType('queries')}
+            onClearError={qs.clearError}
+            renderCell={renderCell}
+          />
+        )}
+
+        {/* Queue View */}
+        {view === 'queue' && (
+          <QueueView 
+            triggers={triggers}
+            queueStats={queueStats}
+            onRefresh={() => {
+              triggers.refresh();
+              queueStats.refresh();
+            }}
+          />
         )}
 
         {/* Schedules View */}
         {view === 'schedules' && (
-          <>
-            {sc.error && sc.error.action !== "setup_required" && <ErrorBox message={sc.error.message} onClose={sc.clearError} />}
-            <h2 className="text-2xl font-semibold text-rust-light mb-4">Schedules</h2>
-            <button onClick={() => setEditingSchedule({})} className="mb-3 px-3 py-2 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500">Add Schedule</button>
-            {sc.loading ? <p className="text-gray-400">Loading…</p> : (
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b-2 border-charcoal-200">
-                    <th className="text-left p-2 text-gray-400 font-medium">Name</th>
-                    <th className="text-left p-2 text-gray-400 font-medium">
-                      <a href="https://crontab.cronhub.io/" target="_blank" rel="noopener noreferrer" className="text-rust-light hover:text-rust underline">Cron</a>
-                    </th>
-                    <th className="text-left p-2 text-gray-400 font-medium">Timezone</th>
-                    <th className="text-left p-2 text-gray-400 font-medium">Enabled</th>
-                    <th className="text-left p-2 text-gray-400 font-medium">Max Concurrency</th>
-                    <th className="text-left p-2 text-gray-400 font-medium">Backfill</th>
-                    <th className="text-left p-2 text-gray-400 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sc.data.map(row => (
-                    <tr key={row.id} className="border-b border-charcoal-200">
-                      <td className="p-2 text-gray-100">{row.name}</td>
-                      <td className="p-2 text-gray-200 font-mono text-sm">{renderCell('schedules', row, 'cron_expr')}</td>
-                      <td className="p-2 text-gray-200">{renderCell('schedules', row, 'timezone')}</td>
-                      <td className="p-2 text-gray-300">{row.enabled ? "✅" : "❌"}</td>
-                      <td className="p-2 text-gray-200">{renderCell('schedules', row, 'max_concurrency')}</td>
-                      <td className="p-2 text-gray-300">{row.backfill_policy}</td>
-                      <td className="p-2">
-                        <button onClick={() => setEditingSchedule(row)} className="px-2 py-1 text-xs bg-purple-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-purple-500 mr-1">Edit</button>
-                        <button onClick={() => handleDelete('schedules', row.id)} className="px-2 py-1 text-xs bg-red-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-red-500">Del</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-          </>
+          <SchedulesView 
+            data={sc.data}
+            loading={sc.loading}
+            error={sc.error}
+            onEdit={setEditingSchedule}
+            onDelete={handleDelete}
+            onClearError={sc.clearError}
+            renderCell={renderCell}
+          />
         )}
 
         {/* Systems View */}
         {view === 'systems' && (
-          <>
-            {sys.error && sys.error.action !== "setup_required" && <ErrorBox message={sys.error.message} onClose={sys.clearError} />}
-            <h2 className="text-2xl font-semibold text-rust-light mb-4">Systems</h2>
-            <button onClick={() => setEditingSystem({})} className="mb-3 px-3 py-2 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500">Add System</button>
-            {sys.loading ? <p className="text-gray-400">Loading…</p> : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sys.data.map(row => {
-                  const isDatabricks = row.kind === 'Databricks';
-                  const showDatabase = ['Postgres', 'SQLServer', 'MySQL', 'Netezza'].includes(row.kind);
-                  return (
-                    <div key={row.id} className="bg-charcoal-500 border border-charcoal-200 rounded-lg p-4">
-                      <h3 className="text-lg font-semibold text-rust-light mb-2">{row.name}</h3>
-                      <p className="text-gray-400 text-sm mb-1"><strong>Type:</strong> {row.kind}</p>
-                      
-                      {isDatabricks ? (
-                        /* Databricks: Only show catalog */
-                        <p className="text-gray-400 text-sm mb-3"><strong>Catalog:</strong> {row.catalog || <span className="text-gray-600">-</span>}</p>
-                      ) : (
-                        /* Other systems: Show connection details */
-                        <>
-                          {row.host && <p className="text-gray-400 text-sm mb-1"><strong>Host:</strong> {row.host}</p>}
-                          {row.port && <p className="text-gray-400 text-sm mb-1"><strong>Port:</strong> {row.port}</p>}
-                          {showDatabase && row.database && <p className="text-gray-400 text-sm mb-1"><strong>Database:</strong> {row.database}</p>}
-                          {row.user_secret_key && <p className="text-gray-400 text-sm mb-1"><strong>User Secret:</strong> {row.user_secret_key}</p>}
-                          {row.jdbc_string && <p className="text-gray-400 text-sm mb-1 font-mono text-xs break-all"><strong>JDBC:</strong> {row.jdbc_string.substring(0, 50)}...</p>}
-                        </>
-                      )}
-                      
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={() => setEditingSystem(row)} className="px-2 py-1 text-xs bg-purple-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-purple-500">Edit</button>
-                        <button onClick={() => handleDelete('systems', row.id)} className="px-2 py-1 text-xs bg-red-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-red-500">Del</button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
+          <SystemsView 
+            data={sys.data}
+            loading={sys.loading}
+            error={sys.error}
+            onEdit={setEditingSystem}
+            onDelete={handleDelete}
+            onClearError={sys.clearError}
+          />
         )}
 
-        {view === 'setup' && (
-          <>
-            <h2 className="text-2xl font-semibold text-rust-light mb-4">Database Setup</h2>
-            
-            <div className="max-w-2xl">
-              {/* Initial Setup Section */}
-              <div className="bg-purple-900/30 border-2 border-purple-600 rounded-lg p-6 mb-6">
-                <h3 className="text-purple-400 font-bold text-xl mb-4">🚀 Initial Setup</h3>
-                <p className="text-gray-300 mb-6">
-                  Follow these steps to set up a <strong className="text-purple-400">fresh deployment</strong>. 
-                  Each step only needs to be completed once per database instance.
-                </p>
-
-                {/* Step 1 */}
-                <div className="mb-5 pb-5 border-b border-gray-700">
-                  <h4 className="text-purple-300 font-semibold text-lg mb-3">
-                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">1</span>
-                    Run SQL Commands as Database Creator
-                  </h4>
-                  <p className="text-gray-300 text-sm mb-3 ml-9">
-                    The <strong>creator</strong> of the Lakebase PostgreSQL instance must run the following commands in the <strong>Databricks SQL Editor</strong>:
-                  </p>
-                  <pre className="bg-charcoal-800 p-3 rounded text-xs text-gray-200 overflow-x-auto border border-gray-700 ml-9">
-{`CREATE USER apprunner WITH PASSWORD 'beepboop123';
-
-CREATE SCHEMA IF NOT EXISTS control;
-GRANT USAGE ON SCHEMA control to apprunner;
-GRANT apprunner TO CURRENT_USER;
-ALTER SCHEMA control OWNER TO apprunner;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA control TO apprunner;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA control TO apprunner;`}
-                  </pre>
-                </div>
-
-                {/* Step 2 */}
-                <div className="mb-5 pb-5 border-b border-gray-700">
-                  <h4 className="text-purple-300 font-semibold text-lg mb-3">
-                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">2</span>
-                    Enable Postgres Native Role Login
-                  </h4>
-                  <p className="text-gray-300 text-sm mb-2 ml-9">
-                    In the Databricks UI, enable native Postgres role login for your database instance.
-                  </p>
-                  <p className="text-gray-400 text-sm ml-9">
-                    📖 <a 
-                      href="https://docs.databricks.com/aws/en/oltp/instances/authentication#authenticate-with-postgres-roles-and-passwords" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-purple-400 hover:text-purple-300 underline"
-                    >
-                      View Databricks documentation for detailed instructions →
-                    </a>
-                  </p>
-                </div>
-
-                {/* Step 3 */}
-                <div className="mb-5 pb-5 border-b border-gray-700">
-                  <h4 className="text-purple-300 font-semibold text-lg mb-3">
-                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">3</span>
-                    Initialize the Database
-                  </h4>
-                  <p className="text-gray-300 text-sm mb-3 ml-9">
-                    Click the button below to create the database schema and tables.
-                  </p>
-                  <ul className="text-gray-400 text-sm mb-4 ml-9 list-disc list-inside space-y-1">
-                    <li>Creates all tables from <code className="bg-charcoal-600 px-1 rounded">backend/sql/ddl.sql</code></li>
-                    <li><strong className="text-green-400">Safe:</strong> Uses <code className="bg-charcoal-600 px-1 rounded">IF NOT EXISTS</code> - won't destroy existing data</li>
-                  </ul>
-                  <button 
-                    onClick={async () => {
-                      try {
-                        await apiCall('POST', '/api/setup/initialize-database', {});
-                        alert('✅ Database initialized successfully!\n\nSchema and tables have been created.');
-                        // Refresh all data
-                        tbl.refresh();
-                        qs.refresh();
-                        sc.refresh();
-                        sys.refresh();
-                      } catch (err) {
-                        alert(`❌ Database initialization failed:\n\n${err.message}`);
-                      }
-                    }}
-                    className="ml-9 px-6 py-3 bg-purple-600 text-white font-bold border-0 rounded-lg cursor-pointer hover:bg-purple-500 text-lg shadow-lg"
-                  >
-                    ✨ Initialize Database
-                  </button>
-                </div>
-
-                {/* Step 4 */}
-                <div className="mb-5 pb-5 border-b border-gray-700">
-                  <h4 className="text-purple-300 font-semibold text-lg mb-3">
-                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">4</span>
-                    Configure Source and Target Systems
-                  </h4>
-                  <p className="text-gray-300 text-sm mb-2 ml-9">
-                    Go to the <strong>Systems</strong> tab and add your source and target systems with their connection details.
-                  </p>
-                  <p className="text-gray-400 text-sm ml-9">
-                    💡 <em>You'll need at least one source and one target system before creating tables or queries.</em>
-                  </p>
-                </div>
-
-                {/* Step 5 */}
-                <div className="mb-5 pb-5 border-b border-gray-700">
-                  <h4 className="text-purple-300 font-semibold text-lg mb-3">
-                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">5</span>
-                    Create Schedules
-                  </h4>
-                  <p className="text-gray-300 text-sm mb-2 ml-9">
-                    Go to the <strong>Schedules</strong> tab and add schedules with cron expressions for automated validation runs.
-                  </p>
-                  <p className="text-gray-400 text-sm ml-9">
-                    💡 <em>Example: "0 2 * * *" runs daily at 2 AM UTC.</em>
-                  </p>
-                </div>
-
-                {/* Step 6 */}
-                <div className="mb-4">
-                  <h4 className="text-purple-300 font-semibold text-lg mb-3">
-                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">6</span>
-                    Add Tables and Queries
-                  </h4>
-                  <p className="text-gray-300 text-sm mb-2 ml-9">
-                    Go to the <strong>Tables</strong> or <strong>Queries</strong> tabs to define your validation rules and bind them to schedules.
-                  </p>
-                  <ul className="text-gray-400 text-sm ml-9 list-disc list-inside space-y-1">
-                    <li><strong>Tables:</strong> Schema-driven comparisons between source and target tables</li>
-                    <li><strong>Queries:</strong> Custom SQL comparisons for complex validation logic</li>
-                    <li><strong>Schedule Binding:</strong> Select which schedules should trigger each validation</li>
-                  </ul>
-                </div>
-        </div>
-
-              {/* Danger Zone Section */}
-              <div className="bg-red-900/30 border-2 border-red-600 rounded-lg p-6 mb-6">
-                <h3 className="text-red-400 font-bold text-xl mb-3">⚠️ Danger Zone</h3>
-                <p className="text-gray-300 mb-4">
-                  This will <strong className="text-red-400">permanently delete ALL data</strong> in the control schema and recreate the tables from scratch using <code className="bg-charcoal-600 px-2 py-1 rounded">ddl.sql</code>.
-                </p>
-                <ul className="text-gray-400 text-sm mb-4 list-disc list-inside space-y-1">
-                  <li>All Tables, Queries, Schedules, Systems, and Bindings will be deleted</li>
-                  <li>This cannot be undone</li>
-                  <li>Database will be recreated from <code className="bg-charcoal-600 px-1 rounded">backend/sql/ddl.sql</code></li>
-                  <li>Grants will be re-run from <code className="bg-charcoal-600 px-1 rounded">backend/sql/grants.sql</code></li>
-        </ul>
-                <p className="text-gray-500 text-xs mb-4">
-                  Use this for initial setup or after updating the database schema in code.
-                </p>
-              </div>
-
-              <button 
-                onClick={async () => {
-                  if (!confirm('⚠️ Are you absolutely sure?\n\nThis will DELETE ALL DATA and cannot be undone.\n\nType "DELETE" in the next prompt to confirm.')) {
-                    return;
-                  }
-                  const confirmation = prompt('Type "DELETE" (all caps) to confirm:');
-                  if (confirmation !== 'DELETE') {
-                    alert('Reset cancelled.');
-                    return;
-                  }
-                  
-                  try {
-                    await apiCall('POST', '/api/setup/reset-database', {});
-                    alert('✅ Database reset successfully!\n\nAll data has been cleared and tables recreated.');
-                    // Refresh all data
-                    tbl.refresh();
-                    qs.refresh();
-                    sc.refresh();
-                    sys.refresh();
-                  } catch (err) {
-                    alert(`❌ Database reset failed:\n\n${err.message}`);
-                  }
-                }}
-                className="px-6 py-3 bg-red-600 text-white font-bold border-0 rounded-lg cursor-pointer hover:bg-red-500 text-lg shadow-lg"
-              >
-                🗑️ Reset Database (Delete All Data)
-              </button>
-            </div>
-          </>
-        )}
+        {view === 'setup' && <SetupView />}
       </div>
     </div>
   );

@@ -13,6 +13,7 @@ export function SystemModal({ system, onSave, onClose }) {
     user_secret_key: system?.user_secret_key || "",
     pass_secret_key: system?.pass_secret_key || "",
     jdbc_string: system?.jdbc_string || "",
+    concurrency: system?.concurrency ?? -1,
     version: system?.version || 0,
     updated_by: "user@company.com"
   }));
@@ -102,6 +103,12 @@ export function SystemModal({ system, onSave, onClose }) {
               <div className="mb-3">
                 <label className="block mb-1 font-medium text-gray-400 text-sm">JDBC String (Optional)</label>
                 <textarea value={form.jdbc_string} onChange={e=>setForm({...form, jdbc_string:e.target.value})} rows={3} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Full JDBC connection string if needed" />
+              </div>
+              
+              <div className="mb-3">
+                <label className="block mb-1 font-medium text-gray-400 text-sm">Concurrency Limit</label>
+                <input type="number" value={form.concurrency} onChange={e=>setForm({...form, concurrency:+e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="-1 for unlimited" />
+                <p className="text-xs text-gray-500 mt-1">-1 = unlimited, 0 = disabled, positive = max concurrent connections</p>
               </div>
             </>
           )}

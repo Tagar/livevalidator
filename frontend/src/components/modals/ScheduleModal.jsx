@@ -1,4 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { API } from '../../services/api';
 
 export function ScheduleModal({ schedule, onSave, onClose }) {
   const [form, setForm] = useState(() => ({
@@ -11,6 +12,14 @@ export function ScheduleModal({ schedule, onSave, onClose }) {
     version: schedule?.version || 0,
     updated_by: "user@company.com"
   }));
+  
+  const [timezones, setTimezones] = useState(['UTC']);
+  
+  useEffect(() => {
+    API.getTimezones().then(setTimezones).catch(err => {
+      console.error('Failed to load timezones:', err);
+    });
+  }, []);
   
   const handleSave = async () => {
     await onSave(form);
@@ -47,8 +56,19 @@ export function ScheduleModal({ schedule, onSave, onClose }) {
           </div>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div>
-              <label className="block mb-1 font-medium text-gray-400 text-sm">Timezone</label>
-              <input value={form.timezone} onChange={e=>setForm({...form, timezone:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+              <label className="block mb-1 font-medium text-gray-400 text-sm">
+                Timezone <span className="text-gray-500 text-xs">(IANA format)</span>
+              </label>
+              <input 
+                list="timezones-list" 
+                value={form.timezone} 
+                onChange={e=>setForm({...form, timezone:e.target.value})} 
+                className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" 
+                placeholder="e.g., America/New_York, America/Phoenix" 
+              />
+              <datalist id="timezones-list">
+                {timezones.map(tz => <option key={tz} value={tz} />)}
+              </datalist>
             </div>
             <div>
               <label className="block mb-1 font-medium text-gray-400 text-sm">Max Concurrency</label>

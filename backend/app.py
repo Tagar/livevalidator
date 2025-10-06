@@ -2,12 +2,13 @@ import os
 import json
 from pathlib import Path
 from typing import Optional, Literal
+from zoneinfo import ZoneInfo, available_timezones
 
 from fastapi import FastAPI, APIRouter, HTTPException, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import asyncpg
 
 from backend.db import fetch, fetchrow, fetchval, execute
@@ -109,6 +110,16 @@ class ScheduleIn(BaseModel):
     max_concurrency: int = 4
     backfill_policy: Literal['none','catch_up','skip_missed'] = 'none'
     updated_by: str
+    
+    @field_validator('timezone')
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        """Validate timezone is a valid IANA timezone"""
+        try:
+            ZoneInfo(v)
+            return v
+        except Exception:
+            raise ValueError(f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')")
 
 class ScheduleUpdate(BaseModel):
     name: Optional[str] = None
@@ -117,16 +128,32 @@ class ScheduleUpdate(BaseModel):
     enabled: Optional[bool] = None
     max_concurrency: Optional[int] = None
     backfill_policy: Optional[Literal['none','catch_up','skip_missed']] = None
+    last_run_at: Optional[str] = None
+    next_run_at: Optional[str] = None
     updated_by: str
     version: int
+    
+    @field_validator('timezone')
+    @classmethod
+    def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
+        """Validate timezone is a valid IANA timezone"""
+        if v is None:
+            return v
+        try:
+            ZoneInfo(v)
+            return v
+        except Exception:
+            raise ValueError(f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')")
 
 class BindingIn(BaseModel):
     schedule_id: int
-    entity_type: Literal['dataset','compare_query']
+    entity_type: Literal['table', 'compare_query']
     entity_id: int
 
 class TriggerIn(BaseModel):
-    entity_type: Literal['dataset','compare_query']
+    source: Literal['manual', 'schedule', 'bulk_job'] = 'manual'
+    schedule_id: Optional[int] = None
+    entity_type: Literal['table', 'compare_query']
     entity_id: int
     requested_by: str
     priority: int = 100
@@ -142,6 +169,7 @@ class SystemIn(BaseModel):
     user_secret_key: Optional[str] = None
     pass_secret_key: Optional[str] = None
     jdbc_string: Optional[str] = None
+    concurrency: int = -1
     options: dict = Field(default_factory=dict)
     is_active: bool = True
     updated_by: str
@@ -156,6 +184,7 @@ class SystemUpdate(BaseModel):
     user_secret_key: Optional[str] = None
     pass_secret_key: Optional[str] = None
     jdbc_string: Optional[str] = None
+    concurrency: Optional[int] = None
     options: Optional[dict] = None
     is_active: Optional[bool] = None
     updated_by: str
@@ -327,7 +356,7 @@ async def bulk_create_tables(body: BulkTableRequest):
                 if schedule:
                     await execute("""
                         INSERT INTO control.schedule_bindings (schedule_id, entity_type, entity_id)
-                        VALUES ($1, 'dataset', $2)
+                        VALUES ($1, 'table', $2)
                         ON CONFLICT DO NOTHING
                     """, schedule['id'], row['id'])
                 
@@ -477,6 +506,23 @@ async def bulk_create_queries(body: BulkQueryRequest):
     return results
 
 # ---------- Schedules & bindings ----------
+@api.get("/timezones")
+async def list_timezones():
+    """
+    Return common IANA timezones for use in schedule configuration.
+    Filters to commonly used timezones for better UX.
+    """
+    # Get all available timezones and filter to common ones
+    common_timezones = sorted([
+        tz for tz in available_timezones()
+        if '/' in tz  # Only include region/city format (excludes legacy aliases)
+        and not tz.startswith('Etc/')  # Exclude Etc/* timezones
+        and not tz.startswith('SystemV/')  # Exclude SystemV/* timezones
+    ])
+    
+    # Add UTC at the beginning
+    return ['UTC'] + common_timezones
+
 @api.get("/schedules")
 async def list_schedules():
     rows = await fetch("SELECT * FROM control.schedules ORDER BY name")
@@ -500,12 +546,14 @@ async def update_schedule(id: int, body: ScheduleUpdate):
           enabled   = COALESCE($5, enabled),
           max_concurrency = COALESCE($6, max_concurrency),
           backfill_policy = COALESCE($7, backfill_policy),
-          updated_by = $8,
+          last_run_at = COALESCE($8, last_run_at),
+          next_run_at = COALESCE($9, next_run_at),
+          updated_by = $10,
           updated_at = now(),
           version = version + 1
-        WHERE id=$1 AND version=$9
+        WHERE id=$1 AND version=$11
         RETURNING *
-    """, id, body.name, body.cron_expr, body.timezone, body.enabled, body.max_concurrency, body.backfill_policy, body.updated_by, body.version)
+    """, id, body.name, body.cron_expr, body.timezone, body.enabled, body.max_concurrency, body.backfill_policy, body.last_run_at, body.next_run_at, body.updated_by, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.schedules WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})
@@ -535,14 +583,433 @@ async def delete_binding(id: int):
     return {"ok": True}
 
 # ---------- Trigger now ----------
+@api.get("/triggers")
+async def list_triggers(status: str | None = None):
+    """
+    Get active triggers (queued/running only).
+    Used by UI to show current queue state.
+    """
+    if status:
+        rows = await fetch("""
+            SELECT t.*, 
+                   CASE t.entity_type 
+                     WHEN 'table' THEN d.name
+                     WHEN 'compare_query' THEN q.name
+                   END as entity_name
+            FROM control.triggers t
+            LEFT JOIN control.datasets d ON t.entity_type = 'table' AND t.entity_id = d.id
+            LEFT JOIN control.compare_queries q ON t.entity_type = 'compare_query' AND t.entity_id = q.id
+            WHERE t.status = $1
+            ORDER BY t.priority ASC, t.id ASC
+        """, status)
+    else:
+        rows = await fetch("""
+            SELECT t.*, 
+                   CASE t.entity_type 
+                     WHEN 'table' THEN d.name
+                     WHEN 'compare_query' THEN q.name
+                   END as entity_name
+            FROM control.triggers t
+            LEFT JOIN control.datasets d ON t.entity_type = 'table' AND t.entity_id = d.id
+            LEFT JOIN control.compare_queries q ON t.entity_type = 'compare_query' AND t.entity_id = q.id
+            ORDER BY t.status, t.priority ASC, t.id ASC
+        """)
+    return [dict(r) for r in rows]
+
 @api.post("/triggers")
-async def trigger_now(t: TriggerIn):
+async def create_trigger(body: TriggerIn):
+    """
+    Create a new validation trigger.
+    Called by UI "Run Now" button or by scheduler.
+    """
+    # Validate entity exists
+    if body.entity_type == 'table':
+        entity = await fetchrow("SELECT * FROM control.datasets WHERE id=$1", body.entity_id)
+    else:
+        entity = await fetchrow("SELECT * FROM control.compare_queries WHERE id=$1", body.entity_id)
+    
+    if not entity:
+        raise HTTPException(status_code=404, detail=f"{body.entity_type} not found")
+    
+    # Check for duplicate active trigger
+    existing = await fetchrow("""
+        SELECT id FROM control.triggers 
+        WHERE entity_type = $1 AND entity_id = $2 AND status IN ('queued', 'running')
+    """, body.entity_type, body.entity_id)
+    
+    if existing:
+        raise HTTPException(status_code=409, detail="Validation already queued/running for this entity")
+    
+    # Create trigger
     row = await fetchrow("""
-        INSERT INTO control.triggers (source, schedule_id, entity_type, entity_id, priority, requested_by, params)
-        VALUES ('manual', NULL, $1, $2, $3, $4, $5)
+        INSERT INTO control.triggers (
+            source, schedule_id, entity_type, entity_id,
+            priority, requested_by, requested_at, params
+        ) VALUES ($1, $2, $3, $4, $5, $6, now(), $7)
         RETURNING *
-    """, t.entity_type, t.entity_id, t.priority, t.requested_by, json.dumps(t.params) if isinstance(t.params, (dict, list)) else t.params)
+    """, body.source, body.schedule_id, body.entity_type, body.entity_id,
+         body.priority, body.requested_by, json.dumps(body.params) if isinstance(body.params, (dict, list)) else body.params)
+    
     return dict(row)
+
+@api.post("/triggers/bulk")
+async def create_triggers_bulk(triggers: list[TriggerIn]):
+    """
+    Create multiple validation triggers in one transaction.
+    Uses bulk INSERT with conflict detection - skips duplicates silently.
+    """
+    if not triggers:
+        return {"created": []}
+    
+    # Extract arrays for each column
+    sources = [t.source for t in triggers]
+    schedule_ids = [t.schedule_id for t in triggers]
+    entity_types = [t.entity_type for t in triggers]
+    entity_ids = [t.entity_id for t in triggers]
+    priorities = [t.priority for t in triggers]
+    requested_bys = [t.requested_by for t in triggers]
+    params_json = [json.dumps(t.params) if isinstance(t.params, (dict, list)) else t.params for t in triggers]
+    
+    # Bulk INSERT using unnest() - clean and efficient
+    rows = await fetch("""
+        INSERT INTO control.triggers (
+            source, schedule_id, entity_type, entity_id,
+            priority, requested_by, requested_at, params
+        )
+        SELECT source, schedule_id, entity_type, entity_id, priority, requested_by, now(), params::jsonb
+        FROM unnest($1::text[], $2::bigint[], $3::text[], $4::bigint[], $5::int[], $6::text[], $7::text[])
+            AS t(source, schedule_id, entity_type, entity_id, priority, requested_by, params)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM control.triggers
+            WHERE entity_type = t.entity_type 
+            AND entity_id = t.entity_id 
+            AND status IN ('queued', 'running')
+        )
+        RETURNING *
+    """, sources, schedule_ids, entity_types, entity_ids, priorities, requested_bys, params_json)
+    
+    return {"created": [dict(r) for r in rows]}
+
+@api.delete("/triggers/{id}")
+async def cancel_trigger(id: int):
+    """Cancel a queued trigger (can't cancel running)."""
+    trigger = await fetchrow("SELECT * FROM control.triggers WHERE id=$1", id)
+    if not trigger:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    
+    if trigger['status'] == 'running':
+        raise HTTPException(status_code=400, detail="Cannot cancel running trigger")
+    
+    await execute("DELETE FROM control.triggers WHERE id=$1", id)
+    return {"ok": True}
+
+@api.get("/queue-status")
+async def get_queue_status():
+    """
+    Get queue statistics for dashboard.
+    Returns counts by status and recent activity.
+    """
+    stats = await fetchrow("""
+        SELECT 
+            COUNT(*) FILTER (WHERE status = 'queued') as queued,
+            COUNT(*) FILTER (WHERE status = 'running') as running,
+            COUNT(*) as total_active
+        FROM control.triggers
+    """)
+    
+    recent = await fetchrow("""
+        SELECT 
+            COUNT(*) FILTER (WHERE status = 'succeeded') as succeeded,
+            COUNT(*) FILTER (WHERE status = 'failed') as failed,
+            COUNT(*) as total_completed
+        FROM control.validation_history
+        WHERE finished_at > now() - interval '1 hour'
+    """)
+    
+    return {
+        "active": dict(stats) if stats else {"queued": 0, "running": 0, "total_active": 0},
+        "recent_1h": dict(recent) if recent else {"succeeded": 0, "failed": 0, "total_completed": 0}
+    }
+
+@api.get("/triggers/running-per-system")
+async def get_running_per_system():
+    """
+    Get count of running validations per system (source and target).
+    Used by JobSentinel for concurrency control.
+    Single efficient query with JOINs.
+    """
+    rows = await fetch("""
+        WITH running_tables AS (
+            SELECT t.id, d.src_system_id, d.tgt_system_id
+            FROM control.triggers t
+            JOIN control.datasets d ON t.entity_id = d.id
+            WHERE t.status = 'running' AND t.entity_type = 'table'
+        ),
+        running_queries AS (
+            SELECT t.id, q.src_system_id, q.tgt_system_id
+            FROM control.triggers t
+            JOIN control.compare_queries q ON t.entity_id = q.id
+            WHERE t.status = 'running' AND t.entity_type = 'compare_query'
+        ),
+        all_running AS (
+            SELECT src_system_id as system_id FROM running_tables
+            UNION ALL
+            SELECT tgt_system_id as system_id FROM running_tables
+            UNION ALL
+            SELECT src_system_id as system_id FROM running_queries
+            UNION ALL
+            SELECT tgt_system_id as system_id FROM running_queries
+        )
+        SELECT system_id, COUNT(*) as count
+        FROM all_running
+        GROUP BY system_id
+    """)
+    
+    # Convert to dict for easy lookup
+    return {row['system_id']: int(row['count']) for row in rows}
+
+# ---------- Validation History ----------
+@api.get("/validation-history")
+async def list_validation_history(
+    entity_type: str | None = None,
+    entity_id: int | None = None,
+    status: str | None = None,
+    schedule_id: int | None = None,
+    limit: int = 100,
+    offset: int = 0
+):
+    """
+    Get validation history with filters.
+    Used by History UI view and entity detail pages.
+    """
+    conditions = []
+    params = []
+    param_idx = 1
+    
+    if entity_type:
+        conditions.append(f"entity_type = ${param_idx}")
+        params.append(entity_type)
+        param_idx += 1
+    
+    if entity_id:
+        conditions.append(f"entity_id = ${param_idx}")
+        params.append(entity_id)
+        param_idx += 1
+    
+    if status:
+        conditions.append(f"status = ${param_idx}")
+        params.append(status)
+        param_idx += 1
+    
+    if schedule_id:
+        conditions.append(f"schedule_id = ${param_idx}")
+        params.append(schedule_id)
+        param_idx += 1
+    
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+    
+    rows = await fetch(f"""
+        SELECT 
+            id, trigger_id, entity_type, entity_id, entity_name,
+            source, schedule_id, requested_by, requested_at,
+            started_at, finished_at, duration_seconds,
+            source_system_name, target_system_name,
+            status, schema_match, row_count_match,
+            row_count_source, row_count_target,
+            rows_compared, rows_different, difference_pct,
+            error_message, databricks_run_url
+        FROM control.validation_history
+        {where_clause}
+        ORDER BY finished_at DESC
+        LIMIT ${param_idx} OFFSET ${param_idx + 1}
+    """, *params, limit, offset)
+    
+    return [dict(r) for r in rows]
+
+@api.get("/validation-history/{id}")
+async def get_validation_detail(id: int):
+    """Get full validation details including sample differences."""
+    row = await fetchrow("SELECT * FROM control.validation_history WHERE id=$1", id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Validation not found")
+    return dict(row)
+
+@api.get("/validation-history/entity/{entity_type}/{entity_id}/latest")
+async def get_latest_validation(entity_type: str, entity_id: int):
+    """
+    Get most recent validation for a specific table/query.
+    Used to display "Last Run" status in UI.
+    """
+    row = await fetchrow("""
+        SELECT * FROM control.validation_history
+        WHERE entity_type = $1 AND entity_id = $2
+        ORDER BY finished_at DESC
+        LIMIT 1
+    """, entity_type, entity_id)
+    
+    if not row:
+        return None
+    return dict(row)
+
+@api.post("/validation-history")
+async def create_validation_history(body: dict):
+    """
+    Called by Databricks workflow at completion to record results.
+    Also deletes the corresponding trigger from active queue.
+    """
+    row = await fetchrow("""
+        INSERT INTO control.validation_history (
+            trigger_id, entity_type, entity_id, entity_name,
+            source, schedule_id, requested_by, requested_at,
+            started_at, finished_at,
+            source_system_id, target_system_id,
+            source_system_name, target_system_name,
+            source_table, target_table, sql_query,
+            compare_mode, pk_columns, exclude_columns,
+            status, schema_match, schema_details,
+            row_count_source, row_count_target, row_count_match,
+            rows_compared, rows_matched, rows_different,
+            sample_differences, error_message, error_details,
+            databricks_run_id, databricks_run_url, full_result
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, $22, $23, $24, $25, $26, $27, $28, $29,
+            $30, $31, $32, $33, $34, $35
+        ) RETURNING id
+    """,
+        body['trigger_id'], body['entity_type'], body['entity_id'], body['entity_name'],
+        body['source'], body.get('schedule_id'), body['requested_by'], body['requested_at'],
+        body['started_at'], body['finished_at'],
+        body['source_system_id'], body['target_system_id'],
+        body['source_system_name'], body['target_system_name'],
+        body.get('source_table'), body.get('target_table'), body.get('sql_query'),
+        body['compare_mode'], body.get('pk_columns'), body.get('exclude_columns'),
+        body['status'], body.get('schema_match'), json.dumps(body.get('schema_details', {})),
+        body.get('row_count_source'), body.get('row_count_target'), body.get('row_count_match'),
+        body.get('rows_compared'), body.get('rows_matched'), body.get('rows_different'),
+        json.dumps(body.get('sample_differences', [])), body.get('error_message'), 
+        json.dumps(body.get('error_details', {})),
+        body['databricks_run_id'], body.get('databricks_run_url'), json.dumps(body.get('full_result', {}))
+    )
+    
+    # Delete from active queue
+    await execute("DELETE FROM control.triggers WHERE id=$1", body['trigger_id'])
+    
+    return {"id": row['id'], "ok": True}
+
+# ---------- Worker Helper Endpoints ----------
+@api.get("/triggers/next")
+async def get_next_trigger(worker_id: str = "worker-default"):
+    """
+    Worker polls this endpoint to get next trigger to execute.
+    Uses SKIP LOCKED for atomic claiming.
+    """
+    row = await fetchrow("""
+        UPDATE control.triggers
+        SET status = 'running',
+            worker_id = $1,
+            locked_at = now(),
+            started_at = COALESCE(started_at, now()),
+            attempts = attempts + 1
+        WHERE id = (
+            SELECT id FROM control.triggers
+            WHERE status = 'queued'
+            ORDER BY priority ASC, id ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+        )
+        RETURNING *
+    """, worker_id)
+    
+    if not row:
+        return None
+    
+    # Fetch full entity details
+    if row['entity_type'] == 'table':
+        entity = await fetchrow("SELECT * FROM control.datasets WHERE id=$1", row['entity_id'])
+    else:
+        entity = await fetchrow("SELECT * FROM control.compare_queries WHERE id=$1", row['entity_id'])
+    
+    if not entity:
+        # Entity was deleted, clean up trigger
+        await execute("DELETE FROM control.triggers WHERE id=$1", row['id'])
+        return None
+    
+    # Fetch system details
+    src_sys = await fetchrow("SELECT * FROM control.systems WHERE id=$1", entity['src_system_id'])
+    tgt_sys = await fetchrow("SELECT * FROM control.systems WHERE id=$1", entity['tgt_system_id'])
+    
+    return {
+        "trigger": dict(row),
+        "entity": dict(entity),
+        "source_system": dict(src_sys) if src_sys else None,
+        "target_system": dict(tgt_sys) if tgt_sys else None
+    }
+
+@api.put("/triggers/{id}/update-run-id")
+async def update_trigger_run_id(id: int, body: dict):
+    """Worker calls this after launching Databricks job to record run ID."""
+    await execute("""
+        UPDATE control.triggers 
+        SET databricks_run_id = $2, databricks_run_url = $3
+        WHERE id = $1
+    """, id, body['run_id'], body.get('run_url'))
+    return {"ok": True}
+
+@api.put("/triggers/{id}/release")
+async def release_trigger(id: int):
+    """
+    Release a claimed trigger back to the queue.
+    Used when concurrency limits prevent immediate launch.
+    """
+    await execute("""
+        UPDATE control.triggers 
+        SET status = 'queued',
+            worker_id = NULL,
+            locked_at = NULL
+        WHERE id = $1 AND status = 'running'
+    """, id)
+    return {"ok": True}
+
+@api.put("/triggers/{id}/fail")
+async def fail_trigger(id: int, body: dict):
+    """
+    Worker calls this if it fails to launch the job (before Databricks runs).
+    Records failure in history and removes from queue.
+    """
+    trigger = await fetchrow("SELECT * FROM control.triggers WHERE id=$1", id)
+    if not trigger:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    
+    # Record minimal history entry for the failure
+    await execute("""
+        INSERT INTO control.validation_history (
+            trigger_id, entity_type, entity_id, entity_name,
+            source, requested_by, requested_at, started_at, finished_at,
+            source_system_id, target_system_id,
+            source_system_name, target_system_name,
+            compare_mode, status, error_message, databricks_run_id
+        ) SELECT 
+            $1, t.entity_type, t.entity_id, 
+            CASE t.entity_type WHEN 'table' THEN d.name ELSE q.name END,
+            t.source, t.requested_by, t.requested_at, t.started_at, now(),
+            COALESCE(d.src_system_id, q.src_system_id),
+            COALESCE(d.tgt_system_id, q.tgt_system_id),
+            src.name, tgt.name,
+            COALESCE(d.compare_mode, q.compare_mode),
+            'failed', $2, 'N/A'
+        FROM control.triggers t
+        LEFT JOIN control.datasets d ON t.entity_type = 'table' AND t.entity_id = d.id
+        LEFT JOIN control.compare_queries q ON t.entity_type = 'compare_query' AND t.entity_id = q.id
+        LEFT JOIN control.systems src ON COALESCE(d.src_system_id, q.src_system_id) = src.id
+        LEFT JOIN control.systems tgt ON COALESCE(d.tgt_system_id, q.tgt_system_id) = tgt.id
+        WHERE t.id = $1
+    """, id, body.get('error', 'Worker failed to launch job'))
+    
+    # Remove from queue
+    await execute("DELETE FROM control.triggers WHERE id=$1", id)
+    return {"ok": True}
 
 # ---------- Systems ----------
 @api.get("/systems")
@@ -555,13 +1022,13 @@ async def create_system(body: SystemIn):
     row = await fetchrow("""
         INSERT INTO control.systems (
           name, kind, catalog, host, port, database, user_secret_key, pass_secret_key, jdbc_string,
-          options, is_active, created_by, updated_by
+          concurrency, options, is_active, created_by, updated_by
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9, $10,$11,$12,$12
+          $1,$2,$3,$4,$5,$6,$7,$8,$9, $10,$11,$12,$13,$13
         ) RETURNING *
     """,
     body.name, body.kind, body.catalog, body.host, body.port, body.database, 
-    body.user_secret_key, body.pass_secret_key, body.jdbc_string,
+    body.user_secret_key, body.pass_secret_key, body.jdbc_string, body.concurrency,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by)
     return dict(row)
 
@@ -582,16 +1049,17 @@ async def update_system(id: int, body: SystemUpdate):
           user_secret_key = COALESCE($8, user_secret_key),
           pass_secret_key = COALESCE($9, pass_secret_key),
           jdbc_string = COALESCE($10, jdbc_string),
-          options = COALESCE($11, options),
-          is_active = COALESCE($12, is_active),
-          updated_by = $13,
+          concurrency = COALESCE($11, concurrency),
+          options = COALESCE($12, options),
+          is_active = COALESCE($13, is_active),
+          updated_by = $14,
           updated_at = now(),
           version = version + 1
-        WHERE id=$1 AND version=$14
+        WHERE id=$1 AND version=$15
         RETURNING *
     """,
     id, body.name, body.kind, body.catalog, body.host, body.port, body.database, 
-    body.user_secret_key, body.pass_secret_key, body.jdbc_string,
+    body.user_secret_key, body.pass_secret_key, body.jdbc_string, body.concurrency,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.systems WHERE id=$1", id)
