@@ -26,6 +26,13 @@ export async function apiCall(method, url, body) {
       throw err;
     }
     
+    // Check for Databricks VPN error
+    if (res.status === 403 && (
+      text.includes("Public access is not allowed for workspace") 
+    )) {
+      throw new Error("403: Not able to access Databricks workspace, enable VPN if applicable.");
+    }
+    
     throw new Error(`${res.status} ${res.statusText}: ${detail}`);
   }
   return res.json();

@@ -37,7 +37,7 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
   // Fetch existing bindings for this table
   useEffect(() => {
     if (table?.id) {
-      fetch(`/api/bindings/dataset/${table.id}`)
+      fetch(`/api/bindings/table/${table.id}`)
         .then(r => r.json())
         .then(bindings => {
           const scheduleIds = bindings.map(b => b.schedule_id);
@@ -76,6 +76,7 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
     const payload = {
       ...form,
       name,
+      entity_type: "table",
       src_schema: src.schema,
       src_table: src.table,
       tgt_schema: tgt.schema,

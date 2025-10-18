@@ -1,15 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 /**
  * Custom hook for data fetching with loading and error states
+ * Only shows loading on initial fetch, not on refreshes (prevents blink)
  */
 export function useFetch(url, deps = []) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const hasLoadedOnce = useRef(false);
   
   const refresh = () => {
-    setLoading(true);
+    // Only set loading=true on initial load, not on refreshes
+    if (!hasLoadedOnce.current) {
+      setLoading(true);
+    }
     setError(null);
     fetch(url)
       .then(async (r) => {
@@ -30,13 +35,21 @@ export function useFetch(url, deps = []) {
             throw err;
           }
           
+          // Check for Databricks VPN error
+          if (r.status === 403 && text.includes("Public access is not allowed for workspace")) {
+            throw new Error("Not able to access Databricks workspace. Please enable VPN if applicable.");
+          }
+          
           throw new Error(`${r.status} ${r.statusText}: ${text || "Request failed"}`);
         }
         return r.json();
       })
       .then(setData)
       .catch((e) => setError(e instanceof Error ? e : new Error(String(e))))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        hasLoadedOnce.current = true;
+      });
   };
   
   useEffect(refresh, deps);

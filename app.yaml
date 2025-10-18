@@ -4,6 +4,24 @@ command:
   - "--workers"
   - "4"
 
+# Allow service principals and jobs to access the app
+permissions:
+  - service_principal_name: live-validator-runner
+    permission_level: CAN_USE
+
+resources:
+  - name: run_validation
+    description: "Validation job for comparing source and target data"
+    job:
+      id: ${resources.jobs.run_validation.id}
+      permission: CAN_MANAGE_RUN
+  
+  - name: job_sentinel
+    description: "Orchestrator job that schedules and monitors validations"
+    job:
+      id: ${resources.jobs.job_sentinel.id}
+      permission: CAN_MANAGE_RUN
+
 env:
   # Database Configuration
   # Update these values in the Databricks Apps UI under Environment Variables

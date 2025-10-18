@@ -7,8 +7,6 @@ export function ScheduleModal({ schedule, onSave, onClose }) {
     cron_expr: schedule?.cron_expr || "0 0 * * *",
     timezone: schedule?.timezone || "UTC",
     enabled: schedule?.enabled ?? true,
-    max_concurrency: schedule?.max_concurrency || 4,
-    backfill_policy: schedule?.backfill_policy || "none",
     version: schedule?.version || 0,
     updated_by: "user@company.com"
   }));
@@ -69,20 +67,6 @@ export function ScheduleModal({ schedule, onSave, onClose }) {
               <datalist id="timezones-list">
                 {timezones.map(tz => <option key={tz} value={tz} />)}
               </datalist>
-            </div>
-            <div>
-              <label className="block mb-1 font-medium text-gray-400 text-sm">Max Concurrency</label>
-              <input type="number" value={form.max_concurrency} onChange={e=>setForm({...form, max_concurrency:+e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="block mb-1 font-medium text-gray-400 text-sm">Backfill Policy</label>
-              <select value={form.backfill_policy} onChange={e=>setForm({...form, backfill_policy:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500">
-                <option value="none">None</option>
-                <option value="catch_up">Catch Up</option>
-                <option value="skip_missed">Skip Missed</option>
-              </select>
             </div>
             <div>
               <label className="block mb-1 font-medium text-gray-400 text-sm">Enabled</label>

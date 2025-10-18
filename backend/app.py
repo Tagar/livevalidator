@@ -1,17 +1,23 @@
 import os
 import json
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Literal
-from zoneinfo import ZoneInfo, available_timezones
+from typing import Optional
+from zoneinfo import available_timezones
 
 from fastapi import FastAPI, APIRouter, HTTPException, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field, field_validator
 import asyncpg
 
 from backend.db import fetch, fetchrow, fetchval, execute
+from backend.models import (
+    TableIn, TableUpdate, BulkTableItem, BulkTableRequest,
+    QueryIn, QueryUpdate, BulkQueryItem, BulkQueryRequest,
+    ScheduleIn, ScheduleUpdate, BindingIn,
+    TriggerIn, SystemIn, SystemUpdate
+)
 
 app = FastAPI(title="LiveValidator Control Plane API", version="0.1")
 
@@ -40,155 +46,7 @@ async def handle_undefined_table(request: Request, exc: asyncpg.exceptions.Undef
             "action": "setup_required",
             "message": "Please go to the Setup tab and click 'Initialize Database'"
         }
-    )
-
-# ---------- Schemas ----------
-class TableIn(BaseModel):
-    name: str
-    src_system_id: int
-    src_schema: Optional[str] = None
-    src_table: Optional[str] = None
-    tgt_system_id: int
-    tgt_schema: Optional[str] = None
-    tgt_table: Optional[str] = None
-    compare_mode: Literal['except_all','primary_key','hash'] = 'except_all'
-    pk_columns: Optional[list[str]] = None
-    watermark_column: Optional[str] = None
-    include_columns: list[str] = Field(default_factory=list)
-    exclude_columns: list[str] = Field(default_factory=list)
-    options: dict = Field(default_factory=dict)
-    is_active: bool = True
-    updated_by: str
-
-class TableUpdate(BaseModel):
-    # partial update + optimistic token
-    name: Optional[str] = None
-    src_system_id: Optional[int] = None
-    src_schema: Optional[str] = None
-    src_table: Optional[str] = None
-    tgt_system_id: Optional[int] = None
-    tgt_schema: Optional[str] = None
-    tgt_table: Optional[str] = None
-    compare_mode: Optional[Literal['except_all','primary_key','hash']] = None
-    pk_columns: Optional[list[str]] = None
-    watermark_column: Optional[str] = None
-    include_columns: Optional[list[str]] = None
-    exclude_columns: Optional[list[str]] = None
-    options: Optional[dict] = None
-    is_active: Optional[bool] = None
-    updated_by: str
-    version: int
-
-class QueryIn(BaseModel):
-    name: str
-    src_system_id: int
-    tgt_system_id: int
-    sql: str
-    compare_mode: Literal['except_all','primary_key','hash'] = 'except_all'
-    pk_columns: Optional[list[str]] = None
-    options: dict = Field(default_factory=dict)
-    is_active: bool = True
-    updated_by: str
-
-class QueryUpdate(BaseModel):
-    name: Optional[str] = None
-    src_system_id: Optional[int] = None
-    tgt_system_id: Optional[int] = None
-    sql: Optional[str] = None
-    compare_mode: Optional[Literal['except_all','primary_key','hash']] = None
-    pk_columns: Optional[list[str]] = None
-    options: Optional[dict] = None
-    is_active: Optional[bool] = None
-    updated_by: str
-    version: int
-
-class ScheduleIn(BaseModel):
-    name: str
-    cron_expr: str
-    timezone: str = 'UTC'
-    enabled: bool = True
-    max_concurrency: int = 4
-    backfill_policy: Literal['none','catch_up','skip_missed'] = 'none'
-    updated_by: str
-    
-    @field_validator('timezone')
-    @classmethod
-    def validate_timezone(cls, v: str) -> str:
-        """Validate timezone is a valid IANA timezone"""
-        try:
-            ZoneInfo(v)
-            return v
-        except Exception:
-            raise ValueError(f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')")
-
-class ScheduleUpdate(BaseModel):
-    name: Optional[str] = None
-    cron_expr: Optional[str] = None
-    timezone: Optional[str] = None
-    enabled: Optional[bool] = None
-    max_concurrency: Optional[int] = None
-    backfill_policy: Optional[Literal['none','catch_up','skip_missed']] = None
-    last_run_at: Optional[str] = None
-    next_run_at: Optional[str] = None
-    updated_by: str
-    version: int
-    
-    @field_validator('timezone')
-    @classmethod
-    def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
-        """Validate timezone is a valid IANA timezone"""
-        if v is None:
-            return v
-        try:
-            ZoneInfo(v)
-            return v
-        except Exception:
-            raise ValueError(f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')")
-
-class BindingIn(BaseModel):
-    schedule_id: int
-    entity_type: Literal['table', 'compare_query']
-    entity_id: int
-
-class TriggerIn(BaseModel):
-    source: Literal['manual', 'schedule', 'bulk_job'] = 'manual'
-    schedule_id: Optional[int] = None
-    entity_type: Literal['table', 'compare_query']
-    entity_id: int
-    requested_by: str
-    priority: int = 100
-    params: dict = Field(default_factory=dict)
-
-class SystemIn(BaseModel):
-    name: str
-    kind: str
-    catalog: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    database: Optional[str] = None
-    user_secret_key: Optional[str] = None
-    pass_secret_key: Optional[str] = None
-    jdbc_string: Optional[str] = None
-    concurrency: int = -1
-    options: dict = Field(default_factory=dict)
-    is_active: bool = True
-    updated_by: str
-
-class SystemUpdate(BaseModel):
-    name: Optional[str] = None
-    kind: Optional[str] = None
-    catalog: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    database: Optional[str] = None
-    user_secret_key: Optional[str] = None
-    pass_secret_key: Optional[str] = None
-    jdbc_string: Optional[str] = None
-    concurrency: Optional[int] = None
-    options: Optional[dict] = None
-    is_active: Optional[bool] = None
-    updated_by: str
-    version: int
+)
 
 # ---------- Helpers ----------
 async def row_or_404(sql: str, *args):
@@ -197,17 +55,50 @@ async def row_or_404(sql: str, *args):
         raise HTTPException(404, "not found")
     return dict(row)
 
+
+@api.get("/secrets")
+async def question():
+    return (os.environ.get("DATABRICKS_CLIENT_ID"), os.environ.get("DATABRICKS_CLIENT_SECRET"))
+
 # ---------- Tables ----------
 @api.get("/tables")
 async def list_tables(q: str | None = None):
     if q:
         rows = await fetch("""
-            SELECT * FROM control.datasets
-            WHERE is_active AND (name ILIKE $1 OR $1 = '')
-            ORDER BY name
+            SELECT 
+                d.*,
+                vh.id as last_run_id,
+                vh.status as last_run_status,
+                vh.finished_at as last_run_timestamp
+            FROM control.datasets d
+            LEFT JOIN LATERAL (
+                SELECT id, status, finished_at
+                FROM control.validation_history
+                WHERE entity_type = 'table' AND entity_id = d.id
+                ORDER BY finished_at DESC
+                LIMIT 1
+            ) vh ON true
+            WHERE d.is_active AND (d.name ILIKE $1 OR $1 = '')
+            ORDER BY d.name
         """, f"%{q}%")
     else:
-        rows = await fetch("SELECT * FROM control.datasets WHERE is_active ORDER BY name")
+        rows = await fetch("""
+            SELECT 
+                d.*,
+                vh.id as last_run_id,
+                vh.status as last_run_status,
+                vh.finished_at as last_run_timestamp
+            FROM control.datasets d
+            LEFT JOIN LATERAL (
+                SELECT id, status, finished_at
+                FROM control.validation_history
+                WHERE entity_type = 'table' AND entity_id = d.id
+                ORDER BY finished_at DESC
+                LIMIT 1
+            ) vh ON true
+            WHERE d.is_active
+            ORDER BY d.name
+        """)
     return [dict(r) for r in rows]
 
 @api.post("/tables")
@@ -269,26 +160,6 @@ async def update_table(id: int, body: TableUpdate):
 async def delete_table(id: int):
     await execute("DELETE FROM control.datasets WHERE id=$1", id)
     return {"ok": True}
-
-class BulkTableItem(BaseModel):
-    name: Optional[str] = None
-    src_schema: str
-    src_table: str
-    tgt_schema: Optional[str] = None
-    tgt_table: Optional[str] = None
-    schedule_name: str
-    compare_mode: Optional[Literal['except_all','primary_key','hash']] = 'except_all'
-    pk_columns: Optional[list[str]] = None
-    watermark_column: Optional[str] = None
-    include_columns: Optional[list[str]] = None
-    exclude_columns: Optional[list[str]] = None
-    is_active: Optional[bool] = True
-
-class BulkTableRequest(BaseModel):
-    src_system_id: int
-    tgt_system_id: int
-    items: list[BulkTableItem]
-    updated_by: str
 
 @api.post("/tables/bulk")
 async def bulk_create_tables(body: BulkTableRequest):
@@ -370,12 +241,41 @@ async def bulk_create_tables(body: BulkTableRequest):
 @api.get("/queries")
 async def list_queries(q: str | None = None):
     if q:
-        rows = await fetch(
-            "SELECT * FROM control.compare_queries WHERE is_active AND name ILIKE $1 ORDER BY name",
-            f"%{q}%"
-        )
+        rows = await fetch("""
+            SELECT 
+                cq.*,
+                vh.id as last_run_id,
+                vh.status as last_run_status,
+                vh.finished_at as last_run_timestamp
+            FROM control.compare_queries cq
+            LEFT JOIN LATERAL (
+                SELECT id, status, finished_at
+                FROM control.validation_history
+                WHERE entity_type = 'compare_query' AND entity_id = cq.id
+                ORDER BY finished_at DESC
+                LIMIT 1
+            ) vh ON true
+            WHERE cq.is_active AND cq.name ILIKE $1
+            ORDER BY cq.name
+        """, f"%{q}%")
     else:
-        rows = await fetch("SELECT * FROM control.compare_queries WHERE is_active ORDER BY name")
+        rows = await fetch("""
+            SELECT 
+                cq.*,
+                vh.id as last_run_id,
+                vh.status as last_run_status,
+                vh.finished_at as last_run_timestamp
+            FROM control.compare_queries cq
+            LEFT JOIN LATERAL (
+                SELECT id, status, finished_at
+                FROM control.validation_history
+                WHERE entity_type = 'compare_query' AND entity_id = cq.id
+                ORDER BY finished_at DESC
+                LIMIT 1
+            ) vh ON true
+            WHERE cq.is_active
+            ORDER BY cq.name
+        """)
     return [dict(r) for r in rows]
 
 @api.post("/queries")
@@ -428,20 +328,6 @@ async def update_query(id: int, body: QueryUpdate):
 async def delete_query(id: int):
     await execute("DELETE FROM control.compare_queries WHERE id=$1", id)
     return {"ok": True}
-
-class BulkQueryItem(BaseModel):
-    name: Optional[str] = None
-    sql: str
-    schedule_name: str
-    compare_mode: Optional[Literal['except_all','primary_key','hash']] = 'except_all'
-    pk_columns: Optional[list[str]] = None
-    is_active: Optional[bool] = True
-
-class BulkQueryRequest(BaseModel):
-    src_system_id: int
-    tgt_system_id: int
-    items: list[BulkQueryItem]
-    updated_by: str
 
 @api.post("/queries/bulk")
 async def bulk_create_queries(body: BulkQueryRequest):
@@ -553,7 +439,11 @@ async def update_schedule(id: int, body: ScheduleUpdate):
           version = version + 1
         WHERE id=$1 AND version=$11
         RETURNING *
-    """, id, body.name, body.cron_expr, body.timezone, body.enabled, body.max_concurrency, body.backfill_policy, body.last_run_at, body.next_run_at, body.updated_by, body.version)
+    """, 
+    id, body.name, body.cron_expr, body.timezone, body.enabled, body.max_concurrency, body.backfill_policy, 
+    datetime.fromisoformat(body.last_run_at) if body.last_run_at else None, 
+    datetime.fromisoformat(body.next_run_at) if body.next_run_at else None, 
+    body.updated_by, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.schedules WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})
@@ -575,6 +465,11 @@ async def bind_schedule(body: BindingIn):
 @api.get("/bindings/{entity_type}/{entity_id}")
 async def list_bindings(entity_type: str, entity_id: int):
     rows = await fetch("SELECT * FROM control.schedule_bindings WHERE entity_type=$1 AND entity_id=$2", entity_type, entity_id)
+    return [dict(r) for r in rows]
+
+@api.get("/bindings_by_sched/{schedule_id}")
+async def list_bindings_by_schedule(schedule_id: int):
+    rows = await fetch("SELECT * FROM control.schedule_bindings WHERE schedule_id=$1", schedule_id)
     return [dict(r) for r in rows]
 
 @api.delete("/bindings/{id}")
@@ -856,7 +751,22 @@ async def create_validation_history(body: dict):
     """
     Called by Databricks workflow at completion to record results.
     Also deletes the corresponding trigger from active queue.
-    """
+    """   
+    # if trigger-id was blank, it was a manual job so we return early
+    if not body.get('trigger_id'):
+        return 
+
+    # Get missing fields from trigger if not provided by job 
+    trigger = await fetchrow("SELECT databricks_run_url, databricks_run_id, entity_id, requested_at FROM control.triggers WHERE id=$1", body['trigger_id'])
+    if not trigger:
+        raise Exception(f"Trigger '{body['trigger_id']}' not found")
+
+    databricks_run_url = body.get('databricks_run_url') or trigger['databricks_run_url']
+    databricks_run_id = body.get('databricks_run_id') or trigger['databricks_run_id']
+    entity_id = body.get('entity_id') or trigger['entity_id']
+    requested_by = "system" # trigger['requested_by'] - once we have users and logins set up, add this in
+    requested_at = trigger['requested_at']
+    
     row = await fetchrow("""
         INSERT INTO control.validation_history (
             trigger_id, entity_type, entity_id, entity_name,
@@ -878,9 +788,9 @@ async def create_validation_history(body: dict):
             $30, $31, $32, $33, $34, $35
         ) RETURNING id
     """,
-        body['trigger_id'], body['entity_type'], body['entity_id'], body['entity_name'],
-        body['source'], body.get('schedule_id'), body['requested_by'], body['requested_at'],
-        body['started_at'], body['finished_at'],
+        body['trigger_id'], body['entity_type'], entity_id, body['entity_name'],
+        body['source'], body.get('schedule_id'), requested_by, requested_at,
+        datetime.fromisoformat(body['started_at']), datetime.fromisoformat(body['finished_at']),
         body['source_system_id'], body['target_system_id'],
         body['source_system_name'], body['target_system_name'],
         body.get('source_table'), body.get('target_table'), body.get('sql_query'),
@@ -890,7 +800,7 @@ async def create_validation_history(body: dict):
         body.get('rows_compared'), body.get('rows_matched'), body.get('rows_different'),
         json.dumps(body.get('sample_differences', [])), body.get('error_message'), 
         json.dumps(body.get('error_details', {})),
-        body['databricks_run_id'], body.get('databricks_run_url'), json.dumps(body.get('full_result', {}))
+        databricks_run_id, databricks_run_url, json.dumps(body.get('full_result', {}))
     )
     
     # Delete from active queue
@@ -936,16 +846,22 @@ async def get_next_trigger(worker_id: str = "worker-default"):
         await execute("DELETE FROM control.triggers WHERE id=$1", row['id'])
         return None
     
-    # Fetch system details
-    src_sys = await fetchrow("SELECT * FROM control.systems WHERE id=$1", entity['src_system_id'])
-    tgt_sys = await fetchrow("SELECT * FROM control.systems WHERE id=$1", entity['tgt_system_id'])
+    # add system names for extra user transparency
+    src_source_info = await fetchrow("SELECT * FROM control.systems WHERE id=$1", entity['src_system_id'])
+    tgt_source_info = await fetchrow("SELECT * FROM control.systems WHERE id=$1", entity['tgt_system_id'])
+
+    # Convert to dict so we can modify it
+    result = dict(entity)
+    result["id"] = row["id"]
+    result["entity_type"] = row["entity_type"]
+    if row["entity_type"] == 'table':
+        result["source_table"] = f"{entity['src_schema'].strip()}.{entity['src_table'].strip()}"
+        result["target_table"] = f"{entity['tgt_schema'].strip()}.{entity['tgt_table'].strip()}"
+
+    result["src_system_name"] = src_source_info["name"]
+    result["tgt_system_name"] = tgt_source_info["name"]
     
-    return {
-        "trigger": dict(row),
-        "entity": dict(entity),
-        "source_system": dict(src_sys) if src_sys else None,
-        "target_system": dict(tgt_sys) if tgt_sys else None
-    }
+    return result
 
 @api.put("/triggers/{id}/update-run-id")
 async def update_trigger_run_id(id: int, body: dict):
@@ -989,7 +905,7 @@ async def fail_trigger(id: int, body: dict):
             source, requested_by, requested_at, started_at, finished_at,
             source_system_id, target_system_id,
             source_system_name, target_system_name,
-            compare_mode, status, error_message, databricks_run_id
+            compare_mode, status, error_message, databricks_run_id, databricks_run_url
         ) SELECT 
             $1, t.entity_type, t.entity_id, 
             CASE t.entity_type WHEN 'table' THEN d.name ELSE q.name END,
@@ -998,7 +914,7 @@ async def fail_trigger(id: int, body: dict):
             COALESCE(d.tgt_system_id, q.tgt_system_id),
             src.name, tgt.name,
             COALESCE(d.compare_mode, q.compare_mode),
-            'failed', $2, 'N/A'
+            'failed', $2, t.databricks_run_id, t.databricks_run_url
         FROM control.triggers t
         LEFT JOIN control.datasets d ON t.entity_type = 'table' AND t.entity_id = d.id
         LEFT JOIN control.compare_queries q ON t.entity_type = 'compare_query' AND t.entity_id = q.id
@@ -1027,14 +943,18 @@ async def create_system(body: SystemIn):
           $1,$2,$3,$4,$5,$6,$7,$8,$9, $10,$11,$12,$13,$13
         ) RETURNING *
     """,
-    body.name, body.kind, body.catalog, body.host, body.port, body.database, 
-    body.user_secret_key, body.pass_secret_key, body.jdbc_string, body.concurrency,
+    body.name, body.kind, body.catalog.strip(), body.host.strip(), body.port, body.database.strip(), 
+    body.user_secret_key.strip(), body.pass_secret_key.strip(), body.jdbc_string.strip(), body.concurrency,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by)
     return dict(row)
 
 @api.get("/systems/{id}")
 async def get_system(id: int):
     return await row_or_404("SELECT * FROM control.systems WHERE id=$1", id)
+
+@api.get("/systems/name/{name}")
+async def get_system_by_name(name: str):
+    return await row_or_404("SELECT * FROM control.systems WHERE name=$1", name)
 
 @api.put("/systems/{id}")
 async def update_system(id: int, body: SystemUpdate):

@@ -6,14 +6,18 @@
 # MAGIC Respects system concurrency limits and manages the validation queue.
 
 # COMMAND ----------
+%pip install croniter
+
+# COMMAND ----------
 
 import json
 import time
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from zoneinfo import ZoneInfo
 from databricks.sdk import WorkspaceClient
 from croniter import croniter
+import traceback
 
 dbutils.widgets.text("backend_api_url", "")
 backend_api_url: str = dbutils.widgets.get("backend_api_url")
@@ -29,15 +33,31 @@ print(f"Backend: {backend_api_url}")
 print(f"Validation Job ID: {validation_job_id}")
 print(f"Poll Interval: {poll_interval}s")
 
-w: WorkspaceClient = WorkspaceClient()
-
-
 # COMMAND ----------
+
+_workspace_client: WorkspaceClient | None = None
+_client_created_at: datetime | None = None
+
+def get_workspace_client() -> WorkspaceClient:
+    """Get or create WorkspaceClient, refreshing hourly"""
+    global _workspace_client, _client_created_at
+    
+    if _workspace_client is None or _client_created_at is None or \
+       datetime.now(UTC) - _client_created_at > timedelta(hours=1):
+        _workspace_client = WorkspaceClient(
+            host="https://dbc-d723fd35-120a.cloud.databricks.com",
+            client_id=dbutils.secrets.get(scope = "livevalidator", key = "lv-app-id"),
+            client_secret=dbutils.secrets.get(scope = "livevalidator", key = "lv-app-secret")
+            )
+        _client_created_at = datetime.now(UTC)
+    
+    return _workspace_client
 
 def api_call(method: str, endpoint: str, data: dict | list | None = None):
     """Call backend API"""
+    client: WorkspaceClient = get_workspace_client()
     response: requests.Response = requests.request(
-        method, f"{backend_api_url}{endpoint}", json=data, timeout=30
+        method, f"{backend_api_url}{endpoint}", json=data, headers=client.config.authenticate(), timeout=30
     )
     response.raise_for_status()
     return response.json()
@@ -72,7 +92,8 @@ def check_and_create_scheduled_triggers() -> int:
             # Initialize next_run_at if missing
             if not next_run_at:
                 # we pass `now` to  give the tz info to croniter
-                cron = croniter(schedule["cron_expr"], now)
+                cron: croniter = croniter(schedule["cron_expr"], now)
+                print(cron.get_next(datetime))
                 update_schedule(schedule["id"], schedule["version"], next_run_at=cron.get_next(datetime).isoformat())
                 continue
 
@@ -86,7 +107,7 @@ def check_and_create_scheduled_triggers() -> int:
             print(f"Schedule '{schedule['name']}' is due")
 
             # Create triggers for all bindings
-            bindings: list[dict] = api_call("GET", f"/api/bindings?schedule_id={schedule['id']}")
+            bindings: list[dict] = api_call("GET", f"/api/bindings_by_sched/{schedule['id']}")
 
             if bindings:
                 # Build bulk trigger request
@@ -119,8 +140,8 @@ def check_and_create_scheduled_triggers() -> int:
             update_schedule(schedule["id"], schedule["version"], last_run_at=now.isoformat(), next_run_at=next_run.isoformat())
             print(f"Updated schedule: next run at {next_run.isoformat()}")
 
-    except Exception as e:
-        print(f"❌ Schedule check failed: {e}")
+    except Exception:
+        print(f"[ERROR] Schedule check failed: {traceback.format_exc()}")
 
     return created
 
@@ -154,19 +175,19 @@ def can_launch_job(src_system_id: int, tgt_system_id: int, running_per_system: d
         return True
 
     except Exception as e:
-        print(f"⚠️  Concurrency check failed: {e}, allowing launch")
+        print(f"⚠️  Concurrency check failed: {traceback.format_exc()}, allowing launch")
         return True
 
 
 def process_next_trigger(running_per_system: dict[int, int]) -> bool:
     """Claim and process next queued trigger"""
     try:
-        trigger: dict = api_call("GET", "/api/triggers/next")
+        trigger: dict[str, str] = api_call("GET", "/api/triggers/next")
 
         if not trigger:
             return False
 
-        print(f"Claimed trigger {trigger['id']}: {trigger['entity_name']}")
+        print(f"Claimed trigger {trigger['id']}: {trigger['name']}")
 
         # Check concurrency limits
         if not can_launch_job(trigger["src_system_id"], trigger["tgt_system_id"], running_per_system):
@@ -178,13 +199,13 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
         is_table: bool = trigger["entity_type"] == "table"
         params: dict = {
             "trigger_id": str(trigger["id"]),
-            "name": trigger["entity_name"],
-            "source_system_id": str(trigger["src_system_id"]),
-            "target_system_id": str(trigger["tgt_system_id"]),
+            "name": trigger["name"],
+            "source_system_name": str(trigger["src_system_name"]),
+            "target_system_name": str(trigger["tgt_system_name"]),
             "backend_api_url": backend_api_url,
             "source_table": trigger.get("source_table", "") if is_table else "",
             "target_table": trigger.get("target_table", "") if is_table else "",
-            "sql": trigger.get("sql_query", "") if not is_table else "",
+            "sql": trigger.get("sql", "") if not is_table else "",
             "compare_mode": trigger.get("compare_mode", "except_all"),
             "pk_columns": json.dumps(trigger.get("pk_columns") or []),
             "include_columns": json.dumps(trigger.get("include_columns") or []),
@@ -194,29 +215,30 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
 
         # Launch validation job
         print(f"Launching validation job...")
+        w: WorkspaceClient = get_workspace_client()
         run = w.jobs.run_now(job_id=validation_job_id, job_parameters=params)
-        run_url: str = f"{w.config.host}/jobs/{validation_job_id}/runs/{run.result(timeout=timedelta(minutes=60))}"
+        run_url: str = f"{w.config.host}/jobs/{validation_job_id}/runs/{run.run_id}"
 
         print(f"✅ Job launched: {run_url}")
 
         # Update trigger with run info
         api_call("PUT", f"/api/triggers/{trigger['id']}/update-run-id", {
-            "databricks_run_id": run.run_id,
-            "databricks_run_url": run_url
+            "run_id": str(run.run_id),
+            "run_url": str(run_url)
         })
 
-        # increment running count for source and target systems
-        running_per_system[trigger["src_system_id"]] += 1
-        running_per_system[trigger["tgt_system_id"]] += 1
+        # increment running countz for source and target systems
+        for system_id in [trigger["src_system_id"], trigger["tgt_system_id"]]:
+            if running_per_system.get(system_id):
+                running_per_system[system_id] += 1
+            else:
+                running_per_system[system_id] = 1
 
         return True
 
-    except requests.HTTPError as e:
-        if e.response.status_code == 404:
-            return False
-        raise
-    except Exception as e:
-        print(f"❌ Failed to process trigger: {e}")
+    except Exception:
+        print(f"[ERROR] Failed to process trigger: {traceback.format_exc()}\nPutting trigger back in queue...")
+        api_call("PUT", f"/api/triggers/{trigger['id']}/release", {})
         return False
 
 
@@ -228,12 +250,10 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
 # COMMAND ----------
 
 print("JobSentinel active - monitoring schedules and triggers...")
-iteration: int = 0
 
 while True:
     try:
-        iteration += 1
-        print(f"\n--- Iteration {iteration} ({datetime.utcnow().isoformat()}) ---")
+        print(f"\n--- Start Iteration {datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")} ---")
 
         # Check schedules and create triggers
         created: int = check_and_create_scheduled_triggers()
@@ -257,6 +277,6 @@ while True:
         print("\nJobSentinel shutting down...")
         break
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"[ERROR] Unexpected error: {traceback.format_exc()}")
         print("Sleeping 60s before retry...")
         time.sleep(60)

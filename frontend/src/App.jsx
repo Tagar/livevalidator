@@ -79,6 +79,7 @@ export default function App() {
   const [view, setView] = useState('results');
   const [conflict, setConflict] = useState(null);
   const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: string }
+  const [highlightId, setHighlightId] = useState(null); // For highlighting specific validation run
   
   // Data fetching
   const tbl = useFetch(`/api/tables`, []);
@@ -140,7 +141,7 @@ export default function App() {
       const datasetBindings = await Promise.all(
         tbl.data.map(async (row) => {
           try {
-            const binds = await fetch(`/api/bindings/dataset/${row.id}`).then(r => r.json());
+            const binds = await fetch(`/api/bindings/table/${row.id}`).then(r => r.json());
             return { entityType: 'dataset', entityId: row.id, bindings: binds };
           } catch {
             return { entityType: 'dataset', entityId: row.id, bindings: [] };
@@ -263,7 +264,7 @@ export default function App() {
       // Sync schedule bindings
       if (tableId && selectedSchedules) {
         // Get current bindings
-        const currentBindings = await fetch(`/api/bindings/dataset/${tableId}`).then(r => r.json()).catch(() => []);
+        const currentBindings = await fetch(`/api/bindings/table/${tableId}`).then(r => r.json()).catch(() => []);
         const currentScheduleIds = currentBindings.map(b => b.schedule_id);
         
         // Remove bindings that are no longer selected
@@ -278,7 +279,7 @@ export default function App() {
           if (!currentScheduleIds.includes(scheduleId)) {
             await apiCall("POST", `/api/bindings`, {
               schedule_id: scheduleId,
-              entity_type: 'dataset',
+              entity_type: 'table',
               entity_id: tableId
             });
           }
@@ -353,8 +354,8 @@ export default function App() {
   };
 
   // Delete handler
-  const handleDelete = async (type, id) => {
-    if (!confirm("Delete this record?")) return;
+  const handleDelete = async (type, id, skipConfirm = false) => {
+    if (!skipConfirm && !confirm("Delete this record?")) return;
     try {
       await apiCall("DELETE", `/api/${type}/${id}`);
       refreshAll();
@@ -376,6 +377,12 @@ export default function App() {
       setNotification({ type: 'error', message: `Error: ${err.message}` });
       setTimeout(() => setNotification(null), 8000);
     }
+  };
+
+  // Navigate to validation result
+  const navigateToResult = (validationId) => {
+    setHighlightId(validationId);
+    setView('results');
   };
 
   // Render cell with inline editing
@@ -466,6 +473,8 @@ export default function App() {
             loading={validations.loading}
             error={validations.error}
             onClearError={validations.clearError}
+            highlightId={highlightId}
+            onClearHighlight={() => setHighlightId(null)}
           />
         )}
 
@@ -484,6 +493,7 @@ export default function App() {
             onUploadCSV={() => setUploadCSVType('tables')}
             onClearError={tbl.clearError}
             renderCell={renderCell}
+            onNavigateToResult={navigateToResult}
           />
         )}
 
@@ -502,6 +512,7 @@ export default function App() {
             onUploadCSV={() => setUploadCSVType('queries')}
             onClearError={qs.clearError}
             renderCell={renderCell}
+            onNavigateToResult={navigateToResult}
           />
         )}
 

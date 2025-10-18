@@ -25,8 +25,6 @@ export function SchedulesView({
               </th>
               <th className="text-left p-2 text-gray-400 font-medium">Timezone</th>
               <th className="text-left p-2 text-gray-400 font-medium">Enabled</th>
-              <th className="text-left p-2 text-gray-400 font-medium">Max Concurrency</th>
-              <th className="text-left p-2 text-gray-400 font-medium">Backfill</th>
               <th className="text-left p-2 text-gray-400 font-medium">Actions</th>
             </tr>
           </thead>
@@ -37,8 +35,6 @@ export function SchedulesView({
                 <td className="p-2 text-gray-200 font-mono text-sm">{renderCell('schedules', row, 'cron_expr')}</td>
                 <td className="p-2 text-gray-200">{renderCell('schedules', row, 'timezone')}</td>
                 <td className="p-2 text-gray-300">{row.enabled ? "✅" : "❌"}</td>
-                <td className="p-2 text-gray-200">{renderCell('schedules', row, 'max_concurrency')}</td>
-                <td className="p-2 text-gray-300">{row.backfill_policy}</td>
                 <td className="p-2">
                   <button onClick={() => onEdit(row)} className="px-2 py-1 text-xs bg-purple-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-purple-500 mr-1">Edit</button>
                   <button onClick={() => onDelete('schedules', row.id)} className="px-2 py-1 text-xs bg-red-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-red-500">Del</button>

@@ -1,6 +1,6 @@
 -- 1) Connection targets / engines
 CREATE TABLE control.systems (
-  id                BIGSERIAL PRIMARY KEY,
+  id                BIGSERIAL,
   name              TEXT NOT NULL UNIQUE,
   kind              TEXT NOT NULL,
   catalog           TEXT,
@@ -17,7 +17,8 @@ CREATE TABLE control.systems (
   updated_by        TEXT NOT NULL,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  version           INTEGER NOT NULL DEFAULT 1
+  version           INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (id, name)
 );
 
 -- 2) Named table ↔ table comparisons (schema-driven)
@@ -98,7 +99,7 @@ CREATE TABLE control.schedules (
 CREATE TABLE control.schedule_bindings (
   id               BIGSERIAL PRIMARY KEY,
   schedule_id      BIGINT NOT NULL REFERENCES control.schedules(id) ON DELETE CASCADE,
-  entity_type      TEXT  NOT NULL,               -- 'dataset' | 'compare_query'
+  entity_type      TEXT  NOT NULL,               -- 'table' | 'compare_query'
   entity_id        BIGINT NOT NULL,              -- FK by app logic
   UNIQUE (schedule_id, entity_type, entity_id)
 );

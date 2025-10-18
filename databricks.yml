@@ -1,6 +1,20 @@
 bundle:
   name: LiveValidator
 
+# resources:
+#   apps:
+#     live-validator:
+#       name: live-validator
+#       source_code_path: /Workspace/Users/dan.zafar@nxp.com/live-validator
+#       resources:
+#         - name: run_validation
+#           job:
+#             id: ${resources.jobs.run_validation.id}
+#         - name: job_sentinel
+#           job:
+#             id: ${resources.jobs.job_sentinel.id}
+        
+
 variables:
   backend_api_url:
     description: "URL of the LiveValidator backend API"

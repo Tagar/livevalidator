@@ -3,7 +3,12 @@ import React from 'react';
 export function Sidebar({ view, setView }) {
   return (
     <div className="w-48 border-r border-charcoal-200 py-5 fixed top-0 left-0 bottom-0 overflow-y-auto bg-charcoal-600">
-      <h2 className="px-4 text-lg font-bold text-rust mb-6">LiveValidator</h2>
+      <div className="px-4 mb-6">
+        <h2 className="text-lg font-bold text-rust inline-block">LiveValidator</h2>
+        <span className="ml-2 inline-block px-2 py-0.5 text-[10px] font-bold tracking-wider bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-full border border-purple-400 shadow-lg shadow-purple-500/50 transform -rotate-3 relative top-[-2px]">
+          BETA
+        </span>
+      </div>
       {['results','tables','queries','queue','schedules','systems','setup'].map(v => (
         <div
           key={v}

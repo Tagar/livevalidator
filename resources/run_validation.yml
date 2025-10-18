@@ -1,7 +1,7 @@
 resources:
   jobs:
     run_validation:
-      name: "[LiveValidator] Run Validation"
+      name: "[LiveValidator] ValidationRunner"
       
       tasks:
         - task_key: validate
@@ -9,21 +9,20 @@ resources:
             notebook_path: ../jobs/run_validation.py
             base_parameters:
               backend_api_url: ${var.backend_api_url}
-          
           timeout_seconds: 3600
-          max_retries: 0
+          disable_auto_optimization: true
       
       # Use serverless compute
       job_clusters: []
-      
+      max_concurrent_runs: 500
       parameters:
         - name: trigger_id
           default: ""
         - name: name
           default: ""
-        - name: source_system_id
+        - name: source_system_name
           default: ""
-        - name: target_system_id
+        - name: target_system_name
           default: ""
         - name: source_table
           default: ""
@@ -41,7 +40,15 @@ resources:
           default: ""
         - name: options
           default: "{}"
+
+      permissions:
+        - level: CAN_MANAGE
+          group_name: 1dp-migration-prd-admin
+        - level: CAN_MANAGE_RUN
+          service_principal_name: f1011635-4c0f-4939-b262-b25676999ed3
+        - level: CAN_MANAGE_RUN
+          group_name: users
       
       tags:
-        application: livevalidator
+        application: live-validator
         component: validation
