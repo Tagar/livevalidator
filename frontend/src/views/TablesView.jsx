@@ -182,6 +182,7 @@ export function TablesView({
                     />
                   </th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Table</th>
+                  <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Last Run</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold w-40">Source</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold w-40">Target</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Compare Mode</th>
@@ -189,7 +190,6 @@ export function TablesView({
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Include</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Exclude</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Schedules</th>
-                  <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Last Run</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Actions</th>
                 </tr>
               </thead>
@@ -229,6 +229,29 @@ export function TablesView({
                         <span className="text-gray-500 text-xs whitespace-nowrap">{row.name}</span>
                       </div>
                     </td>
+                    <td className="px-2 py-1">
+                      {row.last_run_status === 'succeeded' ? (
+                        <button
+                          onClick={() => onNavigateToResult(row.last_run_id)}
+                          className="px-1.5 py-0.5 text-sm rounded-full bg-green-900/40 text-green-300 border border-green-700 whitespace-nowrap hover:bg-green-900/60 transition-colors"
+                          title={`Last run: ${new Date(row.last_run_timestamp).toLocaleString()}`}
+                        >
+                          ✓ Success
+                        </button>
+                      ) : row.last_run_status === 'failed' ? (
+                        <button
+                          onClick={() => onNavigateToResult(row.last_run_id)}
+                          className="px-1.5 py-0.5 text-sm rounded-full bg-red-900/40 text-red-300 border border-red-700 whitespace-nowrap hover:bg-red-900/60 transition-colors"
+                          title={`Last run: ${new Date(row.last_run_timestamp).toLocaleString()}`}
+                        >
+                          ✗ Failed
+                        </button>
+                      ) : (
+                        <span className="px-1.5 py-0.5 text-sm rounded-full bg-gray-900/40 text-gray-500 border border-gray-700 whitespace-nowrap">
+                          No recent
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1 text-gray-100 text-sm w-40">{renderCell('tables', row, 'src_system_id', systems)}</td>
                     <td className="px-2 py-1 text-gray-100 text-sm w-40">{renderCell('tables', row, 'tgt_system_id', systems)}</td>
                     <td className="px-2 py-1 text-gray-300 text-sm whitespace-nowrap">{row.compare_mode}</td>
@@ -236,27 +259,6 @@ export function TablesView({
                     <td className="px-2 py-1 text-gray-300 text-sm">{row.include_columns?.join(', ') || '-'}</td>
                     <td className="px-2 py-1 text-gray-300 text-sm">{row.exclude_columns?.join(', ') || '-'}</td>
                     <td className="px-2 py-1 text-purple-400 text-sm">{scheduleNames || '-'}</td>
-                    <td className="px-2 py-1 text-sm">
-                      {row.last_run_status === 'succeeded' ? (
-                        <button
-                          onClick={() => onNavigateToResult(row.last_run_id)}
-                          className="text-green-500 hover:text-green-400 cursor-pointer text-lg"
-                          title={`Success - ${new Date(row.last_run_timestamp).toLocaleString()}`}
-                        >
-                          ✓
-                        </button>
-                      ) : row.last_run_status === 'failed' ? (
-                        <button
-                          onClick={() => onNavigateToResult(row.last_run_id)}
-                          className="text-red-500 hover:text-red-400 cursor-pointer text-lg"
-                          title={`Failed - ${new Date(row.last_run_timestamp).toLocaleString()}`}
-                        >
-                          ✗
-                        </button>
-                      ) : (
-                        <span className="text-gray-500" title="No recent run">-</span>
-                      )}
-                    </td>
                     <td className="px-2 py-1 whitespace-nowrap">
                       <button onClick={() => onEdit(row)} className="px-1.5 py-0.5 text-sm bg-purple-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-purple-500 mr-1">Edit</button>
                       <button onClick={() => onDelete('tables', row.id)} className="px-1.5 py-0.5 text-sm bg-red-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-red-500 mr-1">Del</button>
