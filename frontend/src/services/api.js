@@ -136,6 +136,7 @@ export const validationService = {
   get: (id) => apiCall("GET", `/api/validation-history/${id}`),
   getLatest: (entityType, entityId) => 
     fetch(`/api/validation-history/entity/${entityType}/${entityId}/latest`).then(r => r.json()),
+  deleteMultiple: (ids) => apiCall("DELETE", "/api/validation-history", { ids }),
 };
 
 /**

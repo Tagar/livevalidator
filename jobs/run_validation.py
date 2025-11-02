@@ -11,6 +11,7 @@ import traceback
 from datetime import datetime, date, UTC
 from decimal import Decimal
 from pyspark.sql import DataFrame
+from pyspark.sql.functions import col, regexp_replace
 from databricks.sdk import WorkspaceClient
 
 # Initialize workspace client for auth
@@ -19,6 +20,28 @@ w: WorkspaceClient = WorkspaceClient(
     client_id=dbutils.secrets.get(scope = "livevalidator", key = "lv-app-id"),
     client_secret=dbutils.secrets.get(scope = "livevalidator", key = "lv-app-secret")
     )
+
+# COMMAND ----------
+
+# Define parameters
+dbutils.widgets.text("trigger_id", "")
+dbutils.widgets.text("name", "")
+dbutils.widgets.text("source_system_name", "")
+dbutils.widgets.text("target_system_name", "")
+dbutils.widgets.text("backend_api_url", "")
+dbutils.widgets.text("source_table", "")
+dbutils.widgets.text("target_table", "")
+dbutils.widgets.text("sql", "")
+dbutils.widgets.text("compare_mode", "except_all")
+dbutils.widgets.text("pk_columns", "")
+dbutils.widgets.text("include_columns", "[]")
+dbutils.widgets.text("exclude_columns", "[]")
+dbutils.widgets.text("downgrade_unicode", "false")
+dbutils.widgets.text("replace_special_char", "[]") # ["7F","?"]
+dbutils.widgets.text("extra_replace_regex", "") # \.\.\.
+dbutils.widgets.text("options", "")
+
+# COMMAND ----------
 
 # Parse parameters
 trigger_id: str | None = dbutils.widgets.get("trigger_id") or None
@@ -33,12 +56,18 @@ compare_mode: str = dbutils.widgets.get("compare_mode")
 pk_columns: list[str] = json.loads(dbutils.widgets.get("pk_columns") or "[]")
 include_columns: list[str] = json.loads(dbutils.widgets.get("include_columns") or "[]")
 exclude_columns: list[str] = json.loads(dbutils.widgets.get("exclude_columns") or "[]")
+downgrade_unicode: bool = dbutils.widgets.get("downgrade_unicode").lower() == "true"
+replace_special_char: list[str] = json.loads(dbutils.widgets.get("replace_special_char") or "[]")
+extra_replace_regex: str = dbutils.widgets.get("extra_replace_regex")
 options: dict = json.loads(dbutils.widgets.get("options") or "{}")
 
 print(f"Starting: {name} (trigger_id={trigger_id or 'manual'})")
 
 if compare_mode != "except_all":
     raise ValueError(f"Unsupported compare_mode: {compare_mode}")
+
+if len(replace_special_char) not in (0,2):
+    raise ValueError(f'Malformmatted "replace_special_char" argument. Must be format [<max allowable hex>, <replacement char>] e.g. ["7F", "?"] or ["FF", "�"]')
 # COMMAND ----------
 
 def api_call(method: str, endpoint: str, data: dict | None = None, headers = w.config.authenticate()) -> dict:
@@ -115,6 +144,8 @@ def validate_counts(src_df: DataFrame, tgt_df: DataFrame) -> dict[str, int | boo
         "row_count_match": src_count == tgt_count
     }
 
+# COMMAND ----------
+
 def serialize_value(val):
     """Convert non-JSON-serializable objects to serializable formats"""
     match val:
@@ -125,23 +156,103 @@ def serialize_value(val):
         case _:
             return val
 
+def drop_diacritics(df: DataFrame) -> DataFrame:
+    """
+    Drop accents, umlats, and others: ü -> u, ñ -> n, ç -> c, etc.
+    """
+    import pandas as pd
+    from pyspark.sql.types import StringType
+    from pyspark.sql.functions import pandas_udf
+    import unicodedata
+
+    @pandas_udf(StringType())
+    def normalize_string_series(col: pd.Series) -> pd.Series:
+        def _normalize_cell(s):
+            if s is None:
+                return None
+            # Unicode NFKD decomposes characters like ü -> u + ¨
+            s = unicodedata.normalize("NFKD", s)
+            # Drop combining marks (category 'Mn')
+            return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+        
+        return col.apply(_normalize_cell)
+    
+    return df.select(*(
+        normalize_string_series(col(c.name).cast("string")).alias(c.name)
+        if c.dataType.typeName() == "string" else c.name
+        for c in df.schema.fields 
+    ))
+
+def sub_non_break_spaces(df: DataFrame) -> DataFrame:
+    return df.select(*(
+        regexp_replace(col(c.name).cast("string"), f"[\u00A0\u2007\u202F]", " ").alias(c.name)
+        if c.dataType.typeName() == "string" else c.name
+        for c in df.schema.fields 
+    ))
+
+def downgrade_unicode_symbols(df: DataFrame) -> DataFrame:
+    df = df.select(*(
+        regexp_replace(col(c.name).cast("string"), f"[\u2018]", "`").alias(c.name)
+        if c.dataType.typeName() == "string" else c.name
+        for c in df.schema.fields 
+    ))
+
+    return df
+
+def sub_special_char(df: DataFrame, max_hex: str, sub_char: str, extra_replace_regex: str = extra_replace_regex) -> DataFrame:
+    df = df.select(*(
+        regexp_replace(col(c.name).cast("string"), f"[^\\x00-\\x{max_hex}]", sub_char).alias(c.name)
+        if c.dataType.typeName() == "string" else c.name
+        for c in df.schema.fields 
+    ))
+
+    df = df.select(*(
+        regexp_replace(col(c.name).cast("string"), extra_replace_regex, sub_char).alias(c.name)
+        if c.dataType.typeName() == "string" else c.name
+        for c in df.schema.fields 
+    ))
+
+    return df
+
+def _downgrade_unicode(df: DataFrame):
+    df = sub_non_break_spaces(df)
+    df = downgrade_unicode_symbols(df)
+    df = drop_diacritics(df)
+    _max_hex, _sub_char = replace_special_char
+    df = sub_special_char(df, _max_hex, _sub_char)
+    return df
+
 def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
     """Row-level validation using EXCEPT ALL"""
     cols: list[str] = [c for c in src_df.columns if c not in exclude]
     src_filtered: DataFrame = src_df.select(*cols)
     tgt_filtered: DataFrame = tgt_df.select(*cols)
     
-    diff_count: int = src_filtered.exceptAll(tgt_filtered).count()
+    diff_df: DataFrame = src_filtered.exceptAll(tgt_filtered)
+    diff_count: int = diff_df.count()
     if not diff_count:
         return {
             "rows_different": 0,
             "sample_differences": []
         }
+
+    if downgrade_unicode:
+        print(f"Found {str(diff_count)} mis-matches, trying again with unicode downgraded...")
+        src_filtered = _downgrade_unicode(src_filtered)
+        tgt_filtered = _downgrade_unicode(tgt_filtered)
+        diff_df: DataFrame = src_filtered.exceptAll(tgt_filtered)
+
+        diff_count: int = diff_df.count()
+        if not diff_count:
+            return {
+                "rows_different": 0,
+                "sample_differences": []
+            }
     
     print(f"Found {diff_count} differences, extracting sample")
 
     # tgt_filtered.exceptAll(src_filtered).count() -- use this later
-    sample: list = src_filtered.exceptAll(tgt_filtered).limit(5).collect()
+    sample: list = diff_df.limit(10).collect()
     
     # Convert datetime/decimal objects to JSON-serializable formats
     sample_dicts: list[dict] = []
@@ -149,11 +260,13 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> d
         row_dict: dict = {k: serialize_value(v) for k, v in row.asDict().items()}
         sample_dicts.append(row_dict)
 
-    print(sample_dicts)
+    print("\n\n".join(str(row) for row in sample_dicts))
     
     return {
         "rows_different": diff_count,
-        "sample_differences": sample_dicts
+        "sample_differences": sample_dicts,
+        "src_df": src_filtered,
+        "tgt_df": tgt_filtered
     }
 
 # COMMAND ----------
@@ -238,6 +351,7 @@ except Exception as e:
     # Report failure if triggered
     if trigger_id:
         api_call("PUT", f"/api/triggers/{trigger_id}/fail", {
+            "status": result["status"],
             "error_message": str(e),
             "error_details": {"type": type(e).__name__}
         })
@@ -247,4 +361,9 @@ except Exception as e:
 
 # Record results
 print("Reporting results...")
-api_call("POST", "/api/validation-history", result)
+
+serde_result: dict = result.copy()
+if serde_result.get('src_df'):
+    serde_result.pop('src_df')
+    serde_result.pop('tgt_df')
+api_call("POST", "/api/validation-history", serde_result)

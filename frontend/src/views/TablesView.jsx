@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ErrorBox } from '../components/ErrorBox';
 import { TagList, TagBadge } from '../components/TagBadge';
 import { BulkTagModal } from '../components/TagInput';
+import { Checkbox } from '../components/Checkbox';
 
 export function TablesView({ 
   data, 
@@ -381,11 +382,9 @@ export function TablesView({
               <thead className="bg-charcoal-400 border-b border-charcoal-200">
                 <tr>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold w-10">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={allFilteredSelected}
                       onChange={(e) => handleSelectAll(e.target.checked)}
-                      className="cursor-pointer w-5 h-5 rounded border-2 border-gray-400 text-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 bg-charcoal-600 hover:border-purple-400 transition-colors"
                     />
                   </th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold max-w-xs">Table</th>
@@ -415,11 +414,9 @@ export function TablesView({
                     className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${isSelected ? 'bg-purple-900/20' : ''}`}
                   >
                     <td className="px-2 py-1 text-sm">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={isSelected}
                         onChange={(e) => handleSelectRow(row.id, e.target.checked)}
-                        className="cursor-pointer w-5 h-5 rounded border-2 border-gray-400 text-purple-600 focus:ring-2 focus:ring-purple-500 focus:ring-offset-0 bg-charcoal-600 hover:border-purple-400 transition-colors"
                       />
                     </td>
                     <td className="px-2 py-1 text-sm">

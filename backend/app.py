@@ -698,6 +698,7 @@ async def list_validation_history(
     entity_id: int | None = None,
     status: str | None = None,
     schedule_id: int | None = None,
+    days_back: int = 30,
     limit: int = 100,
     offset: int = 0
 ):
@@ -708,6 +709,10 @@ async def list_validation_history(
     conditions = []
     params = []
     param_idx = 1
+    
+    # Filter by time range
+    if days_back > 0:
+        conditions.append(f"vh.requested_at >= NOW() - INTERVAL '{days_back} days'")
     
     if entity_type:
         conditions.append(f"vh.entity_type = ${param_idx}")
@@ -847,6 +852,59 @@ async def create_validation_history(body: dict):
     
     return {"id": row['id'], "ok": True}
 
+@api.delete("/validation-history")
+async def delete_validation_history(body: dict):
+    """
+    Bulk delete validation history records by IDs.
+    Body: {"ids": [1, 2, 3, ...]}
+    """
+    ids = body.get('ids', [])
+    if not ids:
+        raise HTTPException(400, "No IDs provided")
+    
+    # Delete the records
+    result = await execute(
+        "DELETE FROM control.validation_history WHERE id = ANY($1)",
+        ids
+    )
+    
+    return {"deleted_count": len(ids), "ok": True}
+
+# ---------- Validation Configuration ----------
+@api.get("/validation-config")
+async def get_validation_config():
+    """Get global validation configuration"""
+    row = await fetchrow("SELECT * FROM control.validation_config WHERE id = 1")
+    if not row:
+        # Return defaults if not initialized
+        return {
+            "downgrade_unicode": False,
+            "replace_special_char": [],
+            "extra_replace_regex": ""
+        }
+    return dict(row)
+
+@api.put("/validation-config")
+async def update_validation_config(body: dict):
+    """Update global validation configuration"""
+    await execute("""
+        UPDATE control.validation_config 
+        SET downgrade_unicode = $1,
+            replace_special_char = $2,
+            extra_replace_regex = $3,
+            updated_by = $4,
+            updated_at = now()
+        WHERE id = 1
+    """, 
+        body.get('downgrade_unicode', False),
+        body.get('replace_special_char', []),
+        body.get('extra_replace_regex', ''),
+        body.get('updated_by', 'user@company.com')
+    )
+    
+    # Return updated config
+    return await get_validation_config()
+
 # ---------- Worker Helper Endpoints ----------
 @api.get("/triggers/next")
 async def get_next_trigger(worker_id: str = "worker-default"):
@@ -953,14 +1011,14 @@ async def fail_trigger(id: int, body: dict):
             COALESCE(d.tgt_system_id, q.tgt_system_id),
             src.name, tgt.name,
             COALESCE(d.compare_mode, q.compare_mode),
-            'failed', $2, t.databricks_run_id, t.databricks_run_url
+            $2, $3, t.databricks_run_id, t.databricks_run_url
         FROM control.triggers t
         LEFT JOIN control.datasets d ON t.entity_type = 'table' AND t.entity_id = d.id
         LEFT JOIN control.compare_queries q ON t.entity_type = 'compare_query' AND t.entity_id = q.id
         LEFT JOIN control.systems src ON COALESCE(d.src_system_id, q.src_system_id) = src.id
         LEFT JOIN control.systems tgt ON COALESCE(d.tgt_system_id, q.tgt_system_id) = tgt.id
         WHERE t.id = $1
-    """, id, body.get('error', 'Worker failed to launch job'))
+    """, id, body.get('status', 'Error'), body.get('error', 'Worker failed to launch job'))
     
     # Remove from queue
     await execute("DELETE FROM control.triggers WHERE id=$1", id)

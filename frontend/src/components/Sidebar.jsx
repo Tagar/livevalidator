@@ -1,6 +1,17 @@
 import React from 'react';
 
 export function Sidebar({ view, setView }) {
+  const viewLabels = {
+    'results': 'Results',
+    'tables': 'Tables',
+    'queries': 'Queries',
+    'queue': 'Queue',
+    'configuration': 'Configs',
+    'schedules': 'Schedules',
+    'systems': 'Systems',
+    'setup': 'Setup'
+  };
+
   return (
     <div className="w-48 border-r border-charcoal-200 py-5 fixed top-0 left-0 bottom-0 overflow-y-auto bg-charcoal-600">
       <div className="px-4 mb-6">
@@ -9,7 +20,7 @@ export function Sidebar({ view, setView }) {
           BETA
         </span>
       </div>
-      {['results','tables','queries','queue','schedules','systems','setup'].map(v => (
+      {['results','tables','queries','queue','configuration','schedules','systems','setup'].map(v => (
         <div
           key={v}
           onClick={() => setView(v)}
@@ -19,7 +30,7 @@ export function Sidebar({ view, setView }) {
               : 'border-transparent hover:bg-charcoal-500/50 hover:border-charcoal-300'
           }`}
         >
-          {v.charAt(0).toUpperCase() + v.slice(1)}
+          {viewLabels[v]}
         </div>
       ))}
     </div>

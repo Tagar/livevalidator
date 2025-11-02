@@ -195,6 +195,11 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             api_call("PUT", f"/api/triggers/{trigger['id']}/release", {})
             return False
 
+        # Fetch global validation config, then apply entity-specific overrides
+        resolved_config = api_call("GET", "/api/validation-config")
+        if trigger.get("config_overrides"):
+            resolved_config.update(trigger.get("config_overrides"))
+
         # Build job parameters
         is_table: bool = trigger["entity_type"] == "table"
         params: dict = {
@@ -210,7 +215,10 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             "pk_columns": json.dumps(trigger.get("pk_columns") or []),
             "include_columns": json.dumps(trigger.get("include_columns") or []),
             "exclude_columns": json.dumps(trigger.get("exclude_columns") or []),
-            "options": json.dumps(trigger.get("options") or {})
+            "options": json.dumps(trigger.get("options") or {}),
+            "downgrade_unicode": str(resolved_config.get("downgrade_unicode", False)).lower(),
+            "replace_special_char": json.dumps(resolved_config.get("replace_special_char", [])),
+            "extra_replace_regex": resolved_config.get("extra_replace_regex", "")
         }
 
         # Launch validation job
@@ -219,7 +227,7 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
         run = w.jobs.run_now(job_id=validation_job_id, job_parameters=params)
         run_url: str = f"{w.config.host}/jobs/{validation_job_id}/runs/{run.run_id}"
 
-        print(f"✅ Job launched: {run_url}")
+        print(f"Launched {trigger["name"]}: {run_url}")
 
         # Update trigger with run info
         api_call("PUT", f"/api/triggers/{trigger['id']}/update-run-id", {

@@ -23,7 +23,8 @@ import {
   QueueView,
   SchedulesView,
   SystemsView,
-  SetupView
+  SetupView,
+  ConfigurationView
 } from './views';
 
 // Services
@@ -86,7 +87,7 @@ export default function App() {
   const qs = useFetch(`/api/queries`, []);
   const sc = useFetch(`/api/schedules`, []);
   const sys = useFetch(`/api/systems`, []);
-  const validations = useFetch(`/api/validation-history?limit=100`, []);
+  const validations = useFetch(`/api/validation-history?days_back=30&limit=10000`, []);
   const triggers = useFetch(`/api/triggers`, []);
   const queueStats = useFetch(`/api/queue-status`, {});
   
@@ -485,6 +486,7 @@ export default function App() {
             onClearError={validations.clearError}
             highlightId={highlightId}
             onClearHighlight={() => setHighlightId(null)}
+            onRefresh={validations.refresh}
           />
         )}
 
@@ -538,6 +540,11 @@ export default function App() {
               queueStats.refresh();
             }}
           />
+        )}
+
+        {/* Configuration View */}
+        {view === 'configuration' && (
+          <ConfigurationView />
         )}
 
         {/* Schedules View */}

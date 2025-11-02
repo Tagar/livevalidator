@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ErrorBox } from '../components/ErrorBox';
 import { TagList, TagBadge } from '../components/TagBadge';
+import { Checkbox } from '../components/Checkbox';
+import { validationService } from '../services/api';
 
-export function ValidationResultsView({ data, loading, error, onClearError, highlightId, onClearHighlight }) {
+export function ValidationResultsView({ data, loading, error, onClearError, highlightId, onClearHighlight, onRefresh }) {
   const [sortConfig, setSortConfig] = useState({ key: 'requested_at', direction: 'desc' });
   const [filters, setFilters] = useState({
     entity_name: '',
@@ -17,6 +19,9 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [activePreset, setActivePreset] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const highlightedRowRef = useRef(null);
   const tagInputRef = useRef(null);
   const inputElementRef = useRef(null);
@@ -130,6 +135,35 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
     });
     setFilterTags([]);
     clearDateFilters();
+  };
+
+  // Checkbox selection handlers
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredAndSortedData.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredAndSortedData.map(v => v.id));
+    }
+  };
+
+  const toggleSelectRow = (id) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteSelected = async () => {
+    setIsDeleting(true);
+    try {
+      await validationService.deleteMultiple(selectedIds);
+      setSelectedIds([]);
+      setShowDeleteConfirm(false);
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      alert(`Failed to delete records: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Extract unique system pairs and tags from data
@@ -319,9 +353,19 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
   return (
     <>
       {error && error.action !== "setup_required" && <ErrorBox message={error.message} onClose={onClearError} />}
-      <div className="mb-4">
-        <h2 className="text-3xl font-bold text-rust-light mb-1">🎯 Validation Results</h2>
-        <p className="text-gray-400 text-base">Recent validation history for the last 30 days</p>
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-rust-light mb-1">🎯 Validation Results</h2>
+          <p className="text-gray-400 text-base">Recent validation history for the last 30 days</p>
+        </div>
+        {selectedIds.length > 0 && (
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="px-4 py-2 bg-red-900/40 text-red-300 border border-red-700 rounded-lg hover:bg-red-900/60 transition-all font-medium"
+          >
+            Delete Selected ({selectedIds.length})
+          </button>
+        )}
       </div>
       
       {/* Summary Stats */}
@@ -329,6 +373,11 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
         <div className="bg-charcoal-500 border border-charcoal-200 rounded-lg p-2.5">
           <div className="text-gray-400 text-sm mb-0.5">Total Validations</div>
           <div className="text-3xl font-bold text-gray-100">{filteredAndSortedData.length}</div>
+          {filteredAndSortedData.length > 9500 && (
+            <div className="mt-2 px-2 py-1 bg-red-900/40 border border-red-700 rounded text-red-300 text-xs">
+              Results pane almost full ({filteredAndSortedData.length}/10000). Delete unneeded records
+            </div>
+          )}
         </div>
         <div className="bg-green-900/20 border border-green-700 rounded-lg p-2.5">
           <div className="text-green-400 text-sm mb-0.5">✓ Succeeded</div>
@@ -502,6 +551,13 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
 
             <thead className="bg-charcoal-400 border-b border-charcoal-200">
               <tr>
+                <th className="px-2 py-1.5 w-12 text-center">
+                  <Checkbox
+                    checked={selectedIds.length === filteredAndSortedData.length && filteredAndSortedData.length > 0}
+                    onChange={toggleSelectAll}
+                    className="align-middle"
+                  />
+                </th>
                 <SortableHeader label="Entity" sortKey="entity_name" className="px-2 py-1.5 text-left max-w-[500px]" />
                 <SortableHeader label="Type" sortKey="entity_type" className="px-2 py-1.5 text-left" />
                 <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Tags</th>
@@ -518,7 +574,7 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
             <tbody>
               {filteredAndSortedData.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center p-8 text-gray-500 text-base">
+                  <td colSpan={11} className="text-center p-8 text-gray-500 text-base">
                     {data.length === 0
                       ? "No validation history yet. Run a validation from Tables or Queries!"
                       : "No results match the current filters."}
@@ -533,6 +589,13 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
                       v.id === highlightId ? 'bg-rust-light/20 ring-2 ring-rust-light' : ''
                     }`}
                   >
+                    <td className="px-2 py-1.5 text-center align-middle">
+                      <Checkbox
+                        checked={selectedIds.includes(v.id)}
+                        onChange={() => toggleSelectRow(v.id)}
+                        className="align-middle"
+                      />
+                    </td>
                     <td className="px-2 py-1.5 text-gray-200 font-medium text-sm max-w-[500px]" title={v.entity_name}>
                       <div className="truncate overflow-hidden whitespace-nowrap [direction:rtl] text-left">
                         <span className="[direction:ltr]">{v.entity_name}</span>
@@ -618,6 +681,34 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
               )}
             </tbody>
           </table>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-charcoal-500 border border-charcoal-200 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-rust-light mb-3">Confirm Deletion</h3>
+            <p className="text-gray-300 mb-6">
+              Are you sure you want to delete <span className="font-bold text-rust-light">{selectedIds.length}</span> validation record{selectedIds.length !== 1 ? 's' : ''}? This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-charcoal-600 text-gray-300 border border-charcoal-300 rounded hover:bg-charcoal-500 transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-900/40 text-red-300 border border-red-700 rounded hover:bg-red-900/60 transition-all disabled:opacity-50 font-medium"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

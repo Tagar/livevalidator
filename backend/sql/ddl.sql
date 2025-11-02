@@ -39,6 +39,7 @@ CREATE TABLE control.datasets (
   exclude_columns  TEXT[] NOT NULL DEFAULT '{}',
   options          JSONB NOT NULL DEFAULT '{}'::jsonb,   -- tolerances, null eq, coercions
   is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+  config_overrides JSONB DEFAULT NULL,                   -- entity-specific validation config overrides
 
   created_by       TEXT NOT NULL,
   updated_by       TEXT NOT NULL,
@@ -63,6 +64,7 @@ CREATE TABLE control.compare_queries (
   pk_columns       TEXT[] DEFAULT NULL,
   options          JSONB NOT NULL DEFAULT '{}'::jsonb,
   is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+  config_overrides JSONB DEFAULT NULL,                   -- entity-specific validation config overrides
 
   created_by       TEXT NOT NULL,
   updated_by       TEXT NOT NULL,
@@ -225,3 +227,19 @@ CREATE TABLE control.entity_tags (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (entity_type, entity_id, tag_id)
 );
+
+-- 9) Global validation configuration (singleton table)
+CREATE TABLE control.validation_config (
+  id                      INTEGER PRIMARY KEY DEFAULT 1,
+  downgrade_unicode       BOOLEAN NOT NULL DEFAULT FALSE,
+  replace_special_char    TEXT[] NOT NULL DEFAULT '{}',
+  extra_replace_regex     TEXT NOT NULL DEFAULT E'\\\\.\\\\.\\\\.',
+  updated_by              TEXT NOT NULL DEFAULT 'system',
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT only_one_row CHECK (id = 1)
+);
+
+-- Insert default config
+INSERT INTO control.validation_config (id, downgrade_unicode, replace_special_char, extra_replace_regex, updated_by)
+VALUES (1, FALSE, ARRAY['7F','?'], E'\\\\.\\\\.\\\\.',  'system')
+ON CONFLICT (id) DO NOTHING;
