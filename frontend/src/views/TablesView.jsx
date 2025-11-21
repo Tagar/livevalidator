@@ -124,8 +124,7 @@ export function TablesView({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               is_active: isActive,
-              version: row.version,
-              updated_by: 'user@company.com'
+              version: row.version
             })
           });
           if (!response.ok) {
@@ -404,6 +403,7 @@ export function TablesView({
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold w-40">Target</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Compare Mode</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">PK Columns</th>
+                  <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Exclude Columns</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Schedules</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Tags</th>
                   <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Actions</th>
@@ -479,6 +479,7 @@ export function TablesView({
                     <td className="px-2 py-1 text-gray-100 text-sm w-40">{renderCell('tables', row, 'tgt_system_id', systems)}</td>
                     <td className="px-2 py-1 text-gray-300 text-sm whitespace-nowrap">{row.compare_mode}</td>
                     <td className="px-2 py-1 text-gray-300 text-sm">{row.pk_columns?.join(', ') || '-'}</td>
+                    <td className="px-2 py-1 text-gray-300 text-sm">{row.exclude_columns?.join(', ') || '-'}</td>
                     <td className="px-2 py-1 text-purple-400 text-sm">{scheduleNames || '-'}</td>
                     <td className="px-2 py-1">
                       <TagList tags={parseTags(row.tags)} maxVisible={3} />

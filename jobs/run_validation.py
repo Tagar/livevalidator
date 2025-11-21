@@ -72,14 +72,17 @@ def api_call(method: str, endpoint: str, data: dict | None = None, headers = w.c
     response.raise_for_status()
     return response.json()
 
-if compare_mode != "except_all":
-    error: str = f"Unsupported compare_mode: {compare_mode}"
+if compare_mode not in ["except_all", "primary_key"]:
+    error: str = f"Unsupported compare_mode: {compare_mode}. Must be either 'except_all' or 'primary_key'"
     api_call("PUT", f"/api/triggers/{trigger_id}/fail", {
             "status": "error",
             "error_message": error,
             "error_details": {"type": type(e).__name__}
         })
     raise ValueError(error)
+
+# interim support primary_key
+compare_mode = "except_all" if compare_mode == "primary_key" else compare_mode
 
 if len(replace_special_char) not in (0,2):
     error: str = f'Malformmatted "replace_special_char" argument. Must be format [<max allowable hex>, <replacement char>] e.g. ["7F", "?"] or ["FF", "�"]'

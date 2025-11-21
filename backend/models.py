@@ -21,7 +21,6 @@ class TableIn(BaseModel):
     exclude_columns: list[str] = Field(default_factory=list)
     options: dict = Field(default_factory=dict)
     is_active: bool = True
-    updated_by: str
 
 
 class TableUpdate(BaseModel):
@@ -39,7 +38,6 @@ class TableUpdate(BaseModel):
     exclude_columns: Optional[list[str]] = None
     options: Optional[dict] = None
     is_active: Optional[bool] = None
-    updated_by: str
     version: int
 
 
@@ -62,7 +60,6 @@ class BulkTableRequest(BaseModel):
     src_system_id: int
     tgt_system_id: int
     items: list[BulkTableItem]
-    updated_by: str
 
 
 # ---------- Queries ----------
@@ -75,7 +72,6 @@ class QueryIn(BaseModel):
     pk_columns: Optional[list[str]] = None
     options: dict = Field(default_factory=dict)
     is_active: bool = True
-    updated_by: str
 
 
 class QueryUpdate(BaseModel):
@@ -87,7 +83,6 @@ class QueryUpdate(BaseModel):
     pk_columns: Optional[list[str]] = None
     options: Optional[dict] = None
     is_active: Optional[bool] = None
-    updated_by: str
     version: int
 
 
@@ -104,7 +99,6 @@ class BulkQueryRequest(BaseModel):
     src_system_id: int
     tgt_system_id: int
     items: list[BulkQueryItem]
-    updated_by: str
 
 
 # ---------- Schedules ----------
@@ -115,7 +109,6 @@ class ScheduleIn(BaseModel):
     enabled: bool = True
     max_concurrency: int = 4
     backfill_policy: Literal['none','catch_up','skip_missed'] = 'none'
-    updated_by: str
     
     @field_validator('timezone')
     @classmethod
@@ -137,7 +130,6 @@ class ScheduleUpdate(BaseModel):
     backfill_policy: Optional[Literal['none','catch_up','skip_missed']] = None
     last_run_at: Optional[str] = None
     next_run_at: Optional[str] = None
-    updated_by: str
     version: int
     
     @field_validator('timezone')
@@ -165,7 +157,6 @@ class TriggerIn(BaseModel):
     schedule_id: Optional[int] = None
     entity_type: Literal['table', 'compare_query']
     entity_id: int
-    requested_by: str
     priority: int = 100
     params: dict = Field(default_factory=dict)
 
@@ -184,7 +175,6 @@ class SystemIn(BaseModel):
     concurrency: int = -1
     options: dict = Field(default_factory=dict)
     is_active: bool = True
-    updated_by: str
 
 
 class SystemUpdate(BaseModel):
@@ -200,7 +190,6 @@ class SystemUpdate(BaseModel):
     concurrency: Optional[int] = None
     options: Optional[dict] = None
     is_active: Optional[bool] = None
-    updated_by: str
     version: int
 
 
@@ -210,13 +199,11 @@ class TypeTransformationIn(BaseModel):
     system_b_id: int
     system_a_function: str
     system_b_function: str
-    updated_by: str
 
 
 class TypeTransformationUpdate(BaseModel):
     system_a_function: Optional[str] = None
     system_b_function: Optional[str] = None
-    updated_by: str
     version: int
 
 

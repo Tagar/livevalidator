@@ -1,5 +1,3 @@
-const DEFAULT_USER = "user@company.com";
-
 /**
  * Generic API call handler
  */
@@ -44,15 +42,14 @@ export async function apiCall(method, url, body) {
 export const tableService = {
   list: () => fetch("/api/tables").then(r => r.json()),
   get: (id) => apiCall("GET", `/api/tables/${id}`),
-  create: (data) => apiCall("POST", "/api/tables", { ...data, updated_by: DEFAULT_USER }),
-  update: (id, data) => apiCall("PUT", `/api/tables/${id}`, { ...data, updated_by: DEFAULT_USER }),
+  create: (data) => apiCall("POST", "/api/tables", data),
+  update: (id, data) => apiCall("PUT", `/api/tables/${id}`, data),
   delete: (id) => apiCall("DELETE", `/api/tables/${id}`),
   bulkUpload: (srcSystemId, tgtSystemId, items) => 
     apiCall("POST", "/api/tables/bulk", { 
       src_system_id: srcSystemId, 
       tgt_system_id: tgtSystemId, 
-      items, 
-      updated_by: DEFAULT_USER 
+      items
     }),
 };
 
@@ -62,15 +59,14 @@ export const tableService = {
 export const queryService = {
   list: () => fetch("/api/queries").then(r => r.json()),
   get: (id) => apiCall("GET", `/api/queries/${id}`),
-  create: (data) => apiCall("POST", "/api/queries", { ...data, updated_by: DEFAULT_USER }),
-  update: (id, data) => apiCall("PUT", `/api/queries/${id}`, { ...data, updated_by: DEFAULT_USER }),
+  create: (data) => apiCall("POST", "/api/queries", data),
+  update: (id, data) => apiCall("PUT", `/api/queries/${id}`, data),
   delete: (id) => apiCall("DELETE", `/api/queries/${id}`),
   bulkUpload: (srcSystemId, tgtSystemId, items) => 
     apiCall("POST", "/api/queries/bulk", { 
       src_system_id: srcSystemId, 
       tgt_system_id: tgtSystemId, 
-      items, 
-      updated_by: DEFAULT_USER 
+      items
     }),
 };
 
@@ -80,8 +76,8 @@ export const queryService = {
 export const scheduleService = {
   list: () => fetch("/api/schedules").then(r => r.json()),
   get: (id) => apiCall("GET", `/api/schedules/${id}`),
-  create: (data) => apiCall("POST", "/api/schedules", { ...data, updated_by: DEFAULT_USER }),
-  update: (id, data) => apiCall("PUT", `/api/schedules/${id}`, { ...data, updated_by: DEFAULT_USER }),
+  create: (data) => apiCall("POST", "/api/schedules", data),
+  update: (id, data) => apiCall("PUT", `/api/schedules/${id}`, data),
   delete: (id) => apiCall("DELETE", `/api/schedules/${id}`),
 };
 
@@ -91,8 +87,8 @@ export const scheduleService = {
 export const systemService = {
   list: () => fetch("/api/systems").then(r => r.json()),
   get: (id) => apiCall("GET", `/api/systems/${id}`),
-  create: (data) => apiCall("POST", "/api/systems", { ...data, updated_by: DEFAULT_USER }),
-  update: (id, data) => apiCall("PUT", `/api/systems/${id}`, { ...data, updated_by: DEFAULT_USER }),
+  create: (data) => apiCall("POST", "/api/systems", data),
+  update: (id, data) => apiCall("PUT", `/api/systems/${id}`, data),
   delete: (id) => apiCall("DELETE", `/api/systems/${id}`),
 };
 
@@ -113,7 +109,7 @@ export const triggerService = {
     return fetch(url).then(r => r.json());
   },
   create: (entityType, entityId) => 
-    apiCall("POST", "/api/triggers", { entity_type: entityType, entity_id: entityId, requested_by: DEFAULT_USER }),
+    apiCall("POST", "/api/triggers", { entity_type: entityType, entity_id: entityId }),
   cancel: (id) => apiCall("DELETE", `/api/triggers/${id}`),
   queueStatus: () => fetch("/api/queue-status").then(r => r.json()),
 };
@@ -163,9 +159,9 @@ export const typeTransformationService = {
   get: (systemAId, systemBId) => 
     apiCall("GET", `/api/type-transformations/${systemAId}/${systemBId}`),
   create: (data) => 
-    apiCall("POST", "/api/type-transformations", { ...data, updated_by: DEFAULT_USER }),
+    apiCall("POST", "/api/type-transformations", data),
   update: (systemAId, systemBId, data) => 
-    apiCall("PUT", `/api/type-transformations/${systemAId}/${systemBId}`, { ...data, updated_by: DEFAULT_USER }),
+    apiCall("PUT", `/api/type-transformations/${systemAId}/${systemBId}`, data),
   delete: (systemAId, systemBId) => 
     apiCall("DELETE", `/api/type-transformations/${systemAId}/${systemBId}`),
   getDefault: (systemKind) => 
@@ -175,10 +171,37 @@ export const typeTransformationService = {
 };
 
 /**
+ * User role operations (admin only)
+ */
+export const userRoleService = {
+  listUsers: () => apiCall("GET", "/api/admin/users"),
+  setUserRole: (userEmail, role) => apiCall("PUT", `/api/admin/users/${userEmail}/role?role=${role}`),
+  deleteUserRole: (userEmail) => apiCall("DELETE", `/api/admin/users/${userEmail}/role`),
+};
+
+/**
+ * Admin configuration operations
+ */
+export const adminService = {
+  getConfig: () => apiCall("GET", "/api/admin/config"),
+  updateConfig: (key, value) => apiCall("PUT", `/api/admin/config/${key}?value=${encodeURIComponent(value)}`),
+};
+
+/**
+ * Current user operations
+ */
+export const currentUserService = {
+  get: () => fetch("/api/current_user").then(r => r.json()),
+};
+
+/**
  * Unified API object
  */
 export const API = {
   getTimezones: () => fetch("/api/timezones").then(r => r.json()),
   initializeDatabase: () => apiCall("POST", "/api/initialize-database"),
   resetDatabase: () => apiCall("POST", "/api/reset-database"),
+  currentUser: currentUserService,
+  userRoles: userRoleService,
+  admin: adminService,
 };

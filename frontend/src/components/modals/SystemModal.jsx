@@ -14,8 +14,7 @@ export function SystemModal({ system, onSave, onClose }) {
     pass_secret_key: system?.pass_secret_key || "",
     jdbc_string: system?.jdbc_string || "",
     concurrency: system?.concurrency ?? -1,
-    version: system?.version || 0,
-    updated_by: "user@company.com"
+    version: system?.version || 0
   }));
   
   const handleSave = async () => {

@@ -129,8 +129,7 @@ export function QueriesView({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               is_active: isActive,
-              version: row.version,
-              updated_by: 'user@company.com'
+              version: row.version
             })
           });
           if (!response.ok) {

@@ -38,10 +38,7 @@ export function ConfigurationView() {
     try {
       setSaving(true);
       setError(null);
-      const updated = await apiCall('PUT', '/api/validation-config', {
-        ...config,
-        updated_by: 'user@company.com'
-      });
+      const updated = await apiCall('PUT', '/api/validation-config', config);
       setConfig(updated);
       setOriginalConfig(updated);
       setSuccessMessage('Configuration saved successfully');

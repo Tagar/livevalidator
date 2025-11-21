@@ -1,5 +1,5 @@
 -- 1) Connection targets / engines
-CREATE TABLE control.systems (
+CREATE TABLE IF NOT EXISTS control.systems (
   id                BIGSERIAL,
   name              TEXT NOT NULL UNIQUE,
   kind              TEXT NOT NULL,
@@ -22,7 +22,7 @@ CREATE TABLE control.systems (
 );
 
 -- 2) Named table ↔ table comparisons (schema-driven)
-CREATE TABLE control.datasets (
+CREATE TABLE IF NOT EXISTS control.datasets (
   id               BIGSERIAL PRIMARY KEY,
   name             TEXT NOT NULL UNIQUE,         -- "sales_daily_tbl"
   src_system_id    BIGINT NOT NULL REFERENCES control.systems(id),
@@ -48,12 +48,12 @@ CREATE TABLE control.datasets (
   version          INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE INDEX ON control.datasets (src_system_id);
-CREATE INDEX ON control.datasets (tgt_system_id);
-CREATE INDEX datasets_active_idx ON control.datasets (name) WHERE is_active;
+CREATE INDEX IF NOT EXISTS datasets_src_system_idx ON control.datasets (src_system_id);
+CREATE INDEX IF NOT EXISTS datasets_tgt_system_idx ON control.datasets (tgt_system_id);
+CREATE INDEX IF NOT EXISTS datasets_active_idx ON control.datasets (name) WHERE is_active;
 
 -- 3) Arbitrary SQL ↔ SQL comparisons
-CREATE TABLE control.compare_queries (
+CREATE TABLE IF NOT EXISTS control.compare_queries (
   id               BIGSERIAL PRIMARY KEY,
   name             TEXT NOT NULL UNIQUE,         -- "daily_sales_sql"
   sql              TEXT NOT NULL,
@@ -73,11 +73,11 @@ CREATE TABLE control.compare_queries (
   version          INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE INDEX compare_queries_active_idx ON control.compare_queries (name) WHERE is_active;
-CREATE INDEX compare_queries_src_tgt_idx ON control.compare_queries (src_system_id, tgt_system_id);
+CREATE INDEX IF NOT EXISTS compare_queries_active_idx ON control.compare_queries (name) WHERE is_active;
+CREATE INDEX IF NOT EXISTS compare_queries_src_tgt_idx ON control.compare_queries (src_system_id, tgt_system_id);
 
 -- 4) Schedules (cron-ish) + state
-CREATE TABLE control.schedules (
+CREATE TABLE IF NOT EXISTS control.schedules (
   id               BIGSERIAL PRIMARY KEY,
   name             TEXT NOT NULL UNIQUE,
   cron_expr        TEXT NOT NULL,                -- e.g., "0 2 * * TUE,THU"
@@ -98,7 +98,7 @@ CREATE TABLE control.schedules (
 );
 
 -- 5) Attach schedules to datasets or compare_queries
-CREATE TABLE control.schedule_bindings (
+CREATE TABLE IF NOT EXISTS control.schedule_bindings (
   id               BIGSERIAL PRIMARY KEY,
   schedule_id      BIGINT NOT NULL REFERENCES control.schedules(id) ON DELETE CASCADE,
   entity_type      TEXT  NOT NULL,               -- 'table' | 'compare_query'
@@ -107,7 +107,7 @@ CREATE TABLE control.schedule_bindings (
 );
 
 -- 6) Triggers / run queue (manual & scheduled). Workers pop SKIP LOCKED.
-CREATE TABLE control.triggers (
+CREATE TABLE IF NOT EXISTS control.triggers (
   id               BIGSERIAL PRIMARY KEY,
   source           TEXT NOT NULL,                -- 'manual' | 'schedule' | 'bulk_job'
   schedule_id      BIGINT REFERENCES control.schedules(id),
@@ -133,10 +133,10 @@ CREATE TABLE control.triggers (
   databricks_run_url TEXT
 );
 
-CREATE INDEX triggers_ready_idx ON control.triggers (status, priority);
+CREATE INDEX IF NOT EXISTS triggers_ready_idx ON control.triggers (status, priority);
 
 -- 7) Validation history (completed validations, archived after 30 days)
-CREATE TABLE control.validation_history (
+CREATE TABLE IF NOT EXISTS control.validation_history (
   id                BIGSERIAL PRIMARY KEY,
   
   -- Link back to original trigger (before it was deleted)
@@ -208,19 +208,19 @@ CREATE TABLE control.validation_history (
 );
 
 -- Indexes for common queries
-CREATE INDEX validation_history_entity_idx ON control.validation_history (entity_type, entity_id);
-CREATE INDEX validation_history_time_idx ON control.validation_history (finished_at DESC);
-CREATE INDEX validation_history_status_idx ON control.validation_history (status);
-CREATE INDEX validation_history_schedule_idx ON control.validation_history (schedule_id) WHERE schedule_id IS NOT NULL;
-CREATE INDEX validation_history_created_at_idx ON control.validation_history (created_at DESC);
+CREATE INDEX IF NOT EXISTS validation_history_entity_idx ON control.validation_history (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS validation_history_time_idx ON control.validation_history (finished_at DESC);
+CREATE INDEX IF NOT EXISTS validation_history_status_idx ON control.validation_history (status);
+CREATE INDEX IF NOT EXISTS validation_history_schedule_idx ON control.validation_history (schedule_id) WHERE schedule_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS validation_history_created_at_idx ON control.validation_history (created_at DESC);
 
 -- 8) Tags for organization / filters in UI
-CREATE TABLE control.tags (
+CREATE TABLE IF NOT EXISTS control.tags (
   id    BIGSERIAL PRIMARY KEY,
   name  TEXT NOT NULL UNIQUE
 );
 
-CREATE TABLE control.entity_tags (
+CREATE TABLE IF NOT EXISTS control.entity_tags (
   entity_type TEXT NOT NULL,
   entity_id   BIGINT NOT NULL,
   tag_id      BIGINT NOT NULL REFERENCES control.tags(id) ON DELETE CASCADE,
@@ -229,7 +229,7 @@ CREATE TABLE control.entity_tags (
 );
 
 -- 9) Global validation configuration (singleton table)
-CREATE TABLE control.validation_config (
+CREATE TABLE IF NOT EXISTS control.validation_config (
   id                      INTEGER PRIMARY KEY DEFAULT 1,
   downgrade_unicode       BOOLEAN NOT NULL DEFAULT FALSE,
   replace_special_char    TEXT[] NOT NULL DEFAULT '{}',
@@ -245,7 +245,7 @@ VALUES (1, FALSE, ARRAY['7F','?'], E'\\\\.\\\\.\\\\.',  'system')
 ON CONFLICT (id) DO NOTHING;
 
 -- 10) Type transformations for cross-system validations
-CREATE TABLE control.type_transformations (
+CREATE TABLE IF NOT EXISTS control.type_transformations (
   id                BIGSERIAL PRIMARY KEY,
   system_a_id       BIGINT NOT NULL REFERENCES control.systems(id) ON DELETE CASCADE,
   system_b_id       BIGINT NOT NULL REFERENCES control.systems(id) ON DELETE CASCADE,
@@ -262,10 +262,35 @@ CREATE TABLE control.type_transformations (
 
 -- Ensure non-directional uniqueness: (1,2) = (2,1)
 -- Using CREATE UNIQUE INDEX instead of inline constraint for compatibility
-CREATE UNIQUE INDEX unique_system_pair ON control.type_transformations (
+CREATE UNIQUE INDEX IF NOT EXISTS unique_system_pair ON control.type_transformations (
   LEAST(system_a_id, system_b_id), 
   GREATEST(system_a_id, system_b_id)
 );
 
-CREATE INDEX type_transformations_system_a_idx ON control.type_transformations (system_a_id);
-CREATE INDEX type_transformations_system_b_idx ON control.type_transformations (system_b_id);
+CREATE INDEX IF NOT EXISTS type_transformations_system_a_idx ON control.type_transformations (system_a_id);
+CREATE INDEX IF NOT EXISTS type_transformations_system_b_idx ON control.type_transformations (system_b_id);
+
+-- User roles for access control
+CREATE TABLE IF NOT EXISTS control.user_roles (
+    user_email VARCHAR(255) PRIMARY KEY,
+    role VARCHAR(20) NOT NULL DEFAULT 'CAN_MANAGE',
+    assigned_by VARCHAR(255),
+    assigned_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT valid_role CHECK (role IN ('CAN_VIEW', 'CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE'))
+);
+
+CREATE INDEX IF NOT EXISTS user_roles_role_idx ON control.user_roles (role);
+
+-- Application configuration (key-value store)
+CREATE TABLE IF NOT EXISTS control.app_config (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT NOT NULL,
+    description TEXT,
+    updated_by VARCHAR(255),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Insert default configuration values
+INSERT INTO control.app_config (key, value, description, updated_by) 
+VALUES ('default_user_role', 'CAN_MANAGE', 'Default role assigned to new users on first access', 'system')
+ON CONFLICT (key) DO NOTHING;

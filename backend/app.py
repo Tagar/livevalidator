@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from zoneinfo import available_timezones
+from contextvars import ContextVar
 
 from fastapi import FastAPI, APIRouter, HTTPException, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +26,29 @@ app = FastAPI(title="LiveValidator Control Plane API", version="0.1")
 
 # Keep API isolated under /api so SPA routing can own "/"
 api = APIRouter(prefix="/api")
+
+# Context var to store current user email
+_current_user_email: ContextVar[str] = ContextVar("current_user_email", default="system")
+
+# Middleware to extract user email from headers and auto-create user entries
+@app.middleware("http")
+async def user_email_middleware(request: Request, call_next):
+    # For Databricks: use x-forwarded-email header
+    # For local dev: default to local-admin@localhost
+    email = request.headers.get("x-forwarded-email", "local-admin@localhost")
+    _current_user_email.set(email)
+    
+    # Auto-create user entry with default role if not exists
+    # (Skip for non-API routes like static files and admin endpoints)
+    if request.url.path.startswith("/api") and not request.url.path.startswith("/api/admin"):
+        try:
+            await ensure_user_exists(email)
+        except Exception as e:
+            # Don't block requests if user creation fails
+            print(f"[warn] Failed to auto-create user {email}: {e}")
+    
+    response = await call_next(request)
+    return response
 
 # If frontend and API are same-origin in prod, you can tighten allow_origins
 app.add_middleware(
@@ -51,6 +75,94 @@ async def handle_undefined_table(request: Request, exc: asyncpg.exceptions.Undef
 )
 
 # ---------- Helpers ----------
+def get_user_email() -> str:
+    """Get current user email from context (set by middleware)"""
+    return _current_user_email.get()
+
+
+async def get_default_user_role() -> str:
+    """Get the default user role from app config"""
+    row = await fetchrow("SELECT value FROM control.app_config WHERE key = 'default_user_role'")
+    return row['value'] if row else 'CAN_MANAGE'
+
+
+async def ensure_user_exists(email: str):
+    """Ensure user exists in user_roles table, create with default role if not"""
+    exists = await fetchrow("SELECT 1 FROM control.user_roles WHERE user_email = $1", email)
+    if not exists:
+        default_role = await get_default_user_role()
+        await execute("""
+            INSERT INTO control.user_roles (user_email, role, assigned_by, assigned_at)
+            VALUES ($1, $2, 'system', NOW())
+            ON CONFLICT (user_email) DO NOTHING
+        """, email, default_role)
+
+
+async def get_user_role(email: str) -> str:
+    """Get user role, uses default from config if user not in table"""
+    row = await fetchrow("SELECT role FROM control.user_roles WHERE user_email = $1", email)
+    if row:
+        return row['role']
+    # Fallback (should rarely happen since middleware auto-creates)
+    return await get_default_user_role()
+
+
+async def can_edit_object(email: str, object_type: str, object_id: int) -> bool:
+    """
+    Check if user can edit specific object based on their role and ownership.
+    
+    Rules:
+    - CAN_VIEW: Cannot edit anything
+    - CAN_RUN: Can edit tables/queries/schedules they created
+    - CAN_EDIT: Can edit any table/query/schedule (but not systems/type_transformations)
+    - CAN_MANAGE: Can edit everything
+    """
+    role = await get_user_role(email)
+    
+    # CAN_VIEW can't edit anything
+    if role == 'CAN_VIEW':
+        return False
+    
+    # CAN_MANAGE can edit everything
+    if role == 'CAN_MANAGE':
+        return True
+    
+    # CAN_EDIT can edit tables/queries/schedules but not systems/type_transformations
+    if role == 'CAN_EDIT':
+        return object_type in ['tables', 'queries', 'schedules']
+    
+    # CAN_RUN can only edit their own creations
+    if role == 'CAN_RUN':
+        if object_type not in ['tables', 'queries', 'schedules']:
+            return False
+        
+        # Check if they're the creator
+        table_map = {
+            'tables': 'datasets',
+            'queries': 'compare_queries',
+            'schedules': 'schedules'
+        }
+        db_table = table_map.get(object_type)
+        if not db_table:
+            return False
+            
+        row = await fetchrow(f"SELECT created_by FROM control.{db_table} WHERE id = $1", object_id)
+        return row and row['created_by'] == email
+    
+    return False
+
+
+async def require_role(*allowed_roles: str):
+    """Check if user has one of the allowed roles, raise 403 if not"""
+    email = get_user_email()
+    role = await get_user_role(email)
+    if role not in allowed_roles:
+        raise HTTPException(
+            403, 
+            f"Access denied. This action requires one of these roles: {', '.join(allowed_roles)}. Your role: {role}"
+        )
+
+
 async def row_or_404(sql: str, *args):
     row = await fetchrow(sql, *args)
     if not row:
@@ -61,6 +173,18 @@ async def row_or_404(sql: str, *args):
 @api.get("/secrets")
 async def question():
     return (os.environ.get("DATABRICKS_CLIENT_ID"), os.environ.get("DATABRICKS_CLIENT_SECRET"))
+
+
+@api.get("/current_user")
+async def get_current_user():
+    """Get the current authenticated user's email and role"""
+    # Get email from context (set by middleware)
+    email = get_user_email()
+    
+    # Look up role using shared function
+    role = await get_user_role(email)
+    
+    return {"email": email, "role": role}
 
 # ---------- Tables ----------
 @api.get("/tables")
@@ -118,6 +242,9 @@ async def list_tables(q: str | None = None):
 
 @api.post("/tables")
 async def create_table(body: TableIn):
+    user_email = get_user_email()
+    await require_role('CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE')
+    
     row = await fetchrow("""
         INSERT INTO control.datasets (
           name, src_system_id, src_schema, src_table,
@@ -131,7 +258,7 @@ async def create_table(body: TableIn):
     body.name, body.src_system_id, body.src_schema, body.src_table,
     body.tgt_system_id, body.tgt_schema, body.tgt_table,
     body.compare_mode, body.pk_columns, body.watermark_column, body.include_columns, body.exclude_columns,
-    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email)
     return dict(row)
 
 @api.get("/tables/{id}")
@@ -140,6 +267,10 @@ async def get_table(id: int):
 
 @api.put("/tables/{id}")
 async def update_table(id: int, body: TableUpdate):
+    user_email = get_user_email()
+    if not await can_edit_object(user_email, 'tables', id):
+        raise HTTPException(403, "You don't have permission to edit this table")
+    
     row = await fetchrow("""
         UPDATE control.datasets SET
           name = COALESCE($2, name),
@@ -165,7 +296,7 @@ async def update_table(id: int, body: TableUpdate):
     id, body.name, body.src_system_id, body.src_schema, body.src_table,
     body.tgt_system_id, body.tgt_schema, body.tgt_table,
     body.compare_mode, body.pk_columns, body.watermark_column, body.include_columns, body.exclude_columns,
-    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by, body.version)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.datasets WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})
@@ -173,11 +304,18 @@ async def update_table(id: int, body: TableUpdate):
 
 @api.delete("/tables/{id}")
 async def delete_table(id: int):
+    user_email = get_user_email()
+    if not await can_edit_object(user_email, 'tables', id):
+        raise HTTPException(403, "You don't have permission to delete this table")
+    
     await execute("DELETE FROM control.datasets WHERE id=$1", id)
     return {"ok": True}
 
 @api.post("/tables/bulk")
 async def bulk_create_tables(body: BulkTableRequest):
+    user_email = get_user_email()
+    await require_role('CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE')
+    
     results = {"created": [], "updated": [], "errors": []}
     
     for idx, item in enumerate(body.items):
@@ -216,7 +354,7 @@ async def bulk_create_tables(body: BulkTableRequest):
                 body.tgt_system_id, tgt_schema, tgt_table,
                 item.compare_mode, item.pk_columns, item.watermark_column,
                 item.include_columns or [], item.exclude_columns or [],
-                item.is_active, body.updated_by)
+                item.is_active, user_email)
                 results["updated"].append({"row": idx + 1, "name": name, "data": dict(row)})
             else:
                 # Create new
@@ -235,7 +373,7 @@ async def bulk_create_tables(body: BulkTableRequest):
                 body.tgt_system_id, tgt_schema, tgt_table,
                 item.compare_mode, item.pk_columns, item.watermark_column,
                 item.include_columns or [], item.exclude_columns or [],
-                item.is_active, body.updated_by)
+                item.is_active, user_email)
                 
                 # Bind to schedule
                 schedule = await fetchrow("SELECT id FROM control.schedules WHERE name=$1", item.schedule_name)
@@ -308,6 +446,9 @@ async def list_queries(q: str | None = None):
 
 @api.post("/queries")
 async def create_query(body: QueryIn):
+    user_email = get_user_email()
+    await require_role('CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE')
+    
     row = await fetchrow("""
         INSERT INTO control.compare_queries (
           name, src_system_id, tgt_system_id, sql,
@@ -319,7 +460,7 @@ async def create_query(body: QueryIn):
     """,
     body.name, body.src_system_id, body.tgt_system_id, body.sql,
     body.compare_mode, body.pk_columns,
-    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email)
     return dict(row)
 
 @api.get("/queries/{id}")
@@ -328,6 +469,10 @@ async def get_query(id: int):
 
 @api.put("/queries/{id}")
 async def update_query(id: int, body: QueryUpdate):
+    user_email = get_user_email()
+    if not await can_edit_object(user_email, 'queries', id):
+        raise HTTPException(403, "You don't have permission to edit this query")
+    
     row = await fetchrow("""
         UPDATE control.compare_queries SET
           name = COALESCE($2, name),
@@ -346,7 +491,7 @@ async def update_query(id: int, body: QueryUpdate):
     """,
     id, body.name, body.src_system_id, body.tgt_system_id, body.sql,
     body.compare_mode, body.pk_columns,
-    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by, body.version)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.compare_queries WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})
@@ -354,11 +499,18 @@ async def update_query(id: int, body: QueryUpdate):
 
 @api.delete("/queries/{id}")
 async def delete_query(id: int):
+    user_email = get_user_email()
+    if not await can_edit_object(user_email, 'queries', id):
+        raise HTTPException(403, "You don't have permission to delete this query")
+    
     await execute("DELETE FROM control.compare_queries WHERE id=$1", id)
     return {"ok": True}
 
 @api.post("/queries/bulk")
 async def bulk_create_queries(body: BulkQueryRequest):
+    user_email = get_user_email()
+    await require_role('CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE')
+    
     results = {"created": [], "updated": [], "errors": []}
     
     for idx, item in enumerate(body.items):
@@ -387,7 +539,7 @@ async def bulk_create_queries(body: BulkQueryRequest):
                 """,
                 existing['id'], body.src_system_id, item.sql, body.tgt_system_id,
                 item.compare_mode, item.pk_columns, 
-                item.is_active, body.updated_by)
+                item.is_active, user_email)
                 results["updated"].append({"row": idx + 1, "name": name, "data": dict(row)})
             else:
                 # Create new
@@ -402,7 +554,7 @@ async def bulk_create_queries(body: BulkQueryRequest):
                 """,
                 name, body.src_system_id, item.sql, body.tgt_system_id,
                 item.compare_mode, item.pk_columns,
-                item.is_active, body.updated_by)
+                item.is_active, user_email)
                 
                 # Bind to schedule
                 schedule = await fetchrow("SELECT id FROM control.schedules WHERE name=$1", item.schedule_name)
@@ -444,14 +596,21 @@ async def list_schedules():
 
 @api.post("/schedules")
 async def create_schedule(body: ScheduleIn):
+    user_email = get_user_email()
+    await require_role('CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE')
+    
     row = await fetchrow("""
         INSERT INTO control.schedules (name, cron_expr, timezone, enabled, max_concurrency, backfill_policy, created_by, updated_by)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING *
-    """, body.name, body.cron_expr, body.timezone, body.enabled, body.max_concurrency, body.backfill_policy, body.updated_by)
+    """, body.name, body.cron_expr, body.timezone, body.enabled, body.max_concurrency, body.backfill_policy, user_email)
     return dict(row)
 
 @api.put("/schedules/{id}")
 async def update_schedule(id: int, body: ScheduleUpdate):
+    user_email = get_user_email()
+    if not await can_edit_object(user_email, 'schedules', id):
+        raise HTTPException(403, "You don't have permission to edit this schedule")
+    
     row = await fetchrow("""
         UPDATE control.schedules SET
           name = COALESCE($2, name),
@@ -471,7 +630,7 @@ async def update_schedule(id: int, body: ScheduleUpdate):
     id, body.name, body.cron_expr, body.timezone, body.enabled, body.max_concurrency, body.backfill_policy, 
     datetime.fromisoformat(body.last_run_at) if body.last_run_at else None, 
     datetime.fromisoformat(body.next_run_at) if body.next_run_at else None, 
-    body.updated_by, body.version)
+    user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.schedules WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})
@@ -479,6 +638,10 @@ async def update_schedule(id: int, body: ScheduleUpdate):
 
 @api.delete("/schedules/{id}")
 async def delete_schedule(id: int):
+    user_email = get_user_email()
+    if not await can_edit_object(user_email, 'schedules', id):
+        raise HTTPException(403, "You don't have permission to delete this schedule")
+    
     await execute("DELETE FROM control.schedules WHERE id=$1", id)
     return {"ok": True}
 
@@ -545,6 +708,9 @@ async def create_trigger(body: TriggerIn):
     Create a new validation trigger.
     Called by UI "Run Now" button or by scheduler.
     """
+    user_email = get_user_email()
+    await require_role('CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE')
+    
     # Validate entity exists
     if body.entity_type == 'table':
         entity = await fetchrow("SELECT * FROM control.datasets WHERE id=$1", body.entity_id)
@@ -571,7 +737,7 @@ async def create_trigger(body: TriggerIn):
         ) VALUES ($1, $2, $3, $4, $5, $6, now(), $7)
         RETURNING *
     """, body.source, body.schedule_id, body.entity_type, body.entity_id,
-         body.priority, body.requested_by, json.dumps(body.params) if isinstance(body.params, (dict, list)) else body.params)
+         body.priority, user_email, json.dumps(body.params) if isinstance(body.params, (dict, list)) else body.params)
     
     return dict(row)
 
@@ -1021,6 +1187,9 @@ async def get_type_transformation(system_a_id: int, system_b_id: int):
 @api.post("/type-transformations")
 async def create_type_transformation(body: TypeTransformationIn):
     """Create a new type transformation for a system pair"""
+    user_email = get_user_email()
+    await require_role('CAN_MANAGE')
+    
     print(f"\n[BACKEND CREATE] Received from frontend:")
     print(f"  body.system_a_id = {body.system_a_id}")
     print(f"  body.system_b_id = {body.system_b_id}")
@@ -1059,7 +1228,7 @@ async def create_type_transformation(body: TypeTransformationIn):
                 (system_a_id, system_b_id, system_a_function, system_b_function, updated_by)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-        """, system_a, system_b, func_a, func_b, body.updated_by)
+        """, system_a, system_b, func_a, func_b, user_email)
         
         return dict(row)
     except asyncpg.UniqueViolationError:
@@ -1068,6 +1237,9 @@ async def create_type_transformation(body: TypeTransformationIn):
 @api.put("/type-transformations/{system_a_id}/{system_b_id}")
 async def update_type_transformation(system_a_id: int, system_b_id: int, body: TypeTransformationUpdate):
     """Update type transformation for a system pair"""
+    user_email = get_user_email()
+    await require_role('CAN_MANAGE')
+    
     # Normalize the pair
     system_a = min(system_a_id, system_b_id)
     system_b = max(system_a_id, system_b_id)
@@ -1104,7 +1276,7 @@ async def update_type_transformation(system_a_id: int, system_b_id: int, body: T
         param_idx += 1
     
     updates.append(f"updated_by = ${param_idx}")
-    params.append(body.updated_by)
+    params.append(user_email)
     param_idx += 1
     
     updates.append(f"updated_at = now()")
@@ -1125,6 +1297,8 @@ async def update_type_transformation(system_a_id: int, system_b_id: int, body: T
 @api.delete("/type-transformations/{system_a_id}/{system_b_id}")
 async def delete_type_transformation(system_a_id: int, system_b_id: int):
     """Delete type transformation for a system pair"""
+    await require_role('CAN_MANAGE')
+    
     system_a = min(system_a_id, system_b_id)
     system_b = max(system_a_id, system_b_id)
     
@@ -1501,6 +1675,9 @@ async def list_systems():
 
 @api.post("/systems")
 async def create_system(body: SystemIn):
+    user_email = get_user_email()
+    await require_role('CAN_MANAGE')
+    
     row = await fetchrow("""
         INSERT INTO control.systems (
           name, kind, catalog, host, port, database, user_secret_key, pass_secret_key, jdbc_string,
@@ -1511,7 +1688,7 @@ async def create_system(body: SystemIn):
     """,
     body.name, body.kind, body.catalog.strip(), body.host.strip(), body.port, body.database.strip(), 
     body.user_secret_key.strip(), body.pass_secret_key.strip(), body.jdbc_string.strip(), body.concurrency,
-    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email)
     return dict(row)
 
 @api.get("/systems/{id}")
@@ -1524,6 +1701,9 @@ async def get_system_by_name(name: str):
 
 @api.put("/systems/{id}")
 async def update_system(id: int, body: SystemUpdate):
+    user_email = get_user_email()
+    await require_role('CAN_MANAGE')
+    
     row = await fetchrow("""
         UPDATE control.systems SET
           name = COALESCE($2, name),
@@ -1546,7 +1726,7 @@ async def update_system(id: int, body: SystemUpdate):
     """,
     id, body.name, body.kind, body.catalog, body.host, body.port, body.database, 
     body.user_secret_key, body.pass_secret_key, body.jdbc_string, body.concurrency,
-    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, body.updated_by, body.version)
+    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.systems WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})
@@ -1554,8 +1734,82 @@ async def update_system(id: int, body: SystemUpdate):
 
 @api.delete("/systems/{id}")
 async def delete_system(id: int):
+    await require_role('CAN_MANAGE')
     await execute("DELETE FROM control.systems WHERE id=$1", id)
     return {"ok": True}
+
+# ---------- User Role Management (Admin Only) ----------
+@api.get("/admin/users")
+async def list_user_roles():
+    """List all users and their assigned roles"""
+    await require_role('CAN_MANAGE')
+    rows = await fetch("""
+        SELECT user_email, role 
+        FROM control.user_roles 
+        ORDER BY user_email ASC
+    """)
+    return [dict(r) for r in rows]
+
+
+@api.put("/admin/users/{user_email}/role")
+async def set_user_role(user_email: str, role: str):
+    """Set or update a user's role"""
+    admin_email = get_user_email()
+    await require_role('CAN_MANAGE')
+    
+    # Validate role
+    valid_roles = ['CAN_VIEW', 'CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE']
+    if role not in valid_roles:
+        raise HTTPException(400, f"Invalid role. Must be one of: {', '.join(valid_roles)}")
+    
+    # Update role
+    await execute("""
+        UPDATE control.user_roles 
+        SET role = $2, assigned_by = $3, assigned_at = NOW()
+        WHERE user_email = $1
+    """, user_email, role, admin_email)
+    
+    return {"user_email": user_email, "role": role}
+
+
+@api.delete("/admin/users/{user_email}/role")
+async def delete_user_role(user_email: str):
+    """Remove user's role assignment (reverts to default)"""
+    await require_role('CAN_MANAGE')
+    
+    await execute("DELETE FROM control.user_roles WHERE user_email = $1", user_email)
+    return {"user_email": user_email, "message": "Role removed, user will now have default role"}
+
+
+# ---------- App Configuration (Admin Only) ----------
+@api.get("/admin/config")
+async def get_app_config():
+    """Get all application configuration"""
+    await require_role('CAN_MANAGE')
+    rows = await fetch("SELECT key, value, description FROM control.app_config ORDER BY key")
+    return [dict(r) for r in rows]
+
+
+@api.put("/admin/config/{key}")
+async def update_app_config(key: str, value: str):
+    """Update a specific config value"""
+    admin_email = get_user_email()
+    await require_role('CAN_MANAGE')
+    
+    # Validate specific configs
+    if key == 'default_user_role':
+        valid_roles = ['CAN_VIEW', 'CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE']
+        if value not in valid_roles:
+            raise HTTPException(400, f"Invalid role. Must be one of: {', '.join(valid_roles)}")
+    
+    # Update config
+    await execute("""
+        UPDATE control.app_config 
+        SET value = $2, updated_by = $3, updated_at = NOW()
+        WHERE key = $1
+    """, key, value, admin_email)
+    
+    return {"key": key, "value": value}
 
 # ---------- Setup / Database Reset ----------
 @api.post("/setup/initialize-database")

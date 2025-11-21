@@ -12,8 +12,7 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
     include_columns: query?.include_columns || [],
     exclude_columns: query?.exclude_columns || [],
     is_active: query?.is_active ?? true,
-    version: query?.version || 0,
-    updated_by: "user@company.com"
+    version: query?.version || 0
   }));
   
   const [selectedSchedules, setSelectedSchedules] = useState([]);
@@ -176,6 +175,20 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
             </div>
           </div>
         </div>
+        
+        {query && (
+          <div className="px-6 py-2 bg-charcoal-500 border-t border-charcoal-200">
+            <div className="text-xs text-gray-400 space-y-1">
+              {query.created_by && (
+                <div>Created by: <span className="text-gray-300">{query.created_by}</span></div>
+              )}
+              {query.updated_by && (
+                <div>Last updated by: <span className="text-gray-300">{query.updated_by}</span></div>
+              )}
+            </div>
+          </div>
+        )}
+        
         <div className="border-t border-charcoal-200 px-6 py-4 flex gap-3 justify-end bg-charcoal-400">
           <button onClick={onClose} className="px-4 py-2.5 bg-charcoal-700 text-gray-200 border border-charcoal-200 rounded-md cursor-pointer hover:bg-charcoal-600 font-medium">Cancel</button>
           <button onClick={handleSave} className="px-4 py-2.5 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 font-medium shadow-lg">💾 Save Query</button>

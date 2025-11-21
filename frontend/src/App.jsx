@@ -1,7 +1,34 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
 
 // Hooks
 import { useFetch } from './hooks/useFetch';
+
+// Create context for current user
+const CurrentUserContext = createContext(null);
+export const useCurrentUser = () => useContext(CurrentUserContext);
+
+// Permission check helpers
+export const canCreate = (role) => {
+  if (!role) return false;
+  return ['CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE'].includes(role);
+};
+
+export const canRun = (role) => {
+  if (!role) return false;
+  return ['CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE'].includes(role);
+};
+
+export const canEdit = (role, createdBy, currentUserEmail) => {
+  if (!role) return false;
+  if (role === 'CAN_VIEW') return false;
+  if (['CAN_EDIT', 'CAN_MANAGE'].includes(role)) return true;
+  // CAN_RUN can only edit their own creations
+  return role === 'CAN_RUN' && createdBy === currentUserEmail;
+};
+
+export const canManageSystems = (role) => {
+  return role === 'CAN_MANAGE';
+};
 
 // Components
 import { Sidebar } from './components/Sidebar';
@@ -25,13 +52,12 @@ import {
   SystemsView,
   SetupView,
   ConfigurationView,
-  TypeMappingsView
+  TypeMappingsView,
+  AdminView
 } from './views';
 
 // Services
 import { apiCall } from './services/api';
-
-const DEFAULT_USER = "user@company.com";
 
 // InlineEditCell Component (kept in App.jsx as it's tightly coupled to handleCellEdit)
 const InlineEditCell = ({ value, onSave, onCancel, type = "text", options = [] }) => {
@@ -82,6 +108,15 @@ export default function App() {
   const [conflict, setConflict] = useState(null);
   const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: string }
   const [highlightId, setHighlightId] = useState(null); // For highlighting specific validation run
+  const [currentUser, setCurrentUser] = useState(null); // { email, role }
+  
+  // Fetch current user
+  useEffect(() => {
+    fetch('/api/current_user')
+      .then(r => r.json())
+      .then(setCurrentUser)
+      .catch(err => console.error('Failed to fetch current user:', err));
+  }, []);
   
   // Data fetching
   const tbl = useFetch(`/api/tables`, []);
@@ -188,7 +223,7 @@ export default function App() {
     if (newValue === row[field]) { setEditingCell(null); return; }
     try {
       const endpoint = `/api/${type}/${row.id}`;
-      const body = { [field]: newValue, version: row.version, updated_by: DEFAULT_USER };
+      const body = { [field]: newValue, version: row.version };
       await apiCall("PUT", endpoint, body);
       refreshAll();
       setEditingCell(null);
@@ -380,7 +415,7 @@ export default function App() {
   // Trigger now
   const triggerNow = async (entity_type, entity_id) => {
     try {
-      await apiCall("POST", `/api/triggers`, { entity_type, entity_id, requested_by: DEFAULT_USER });
+      await apiCall("POST", `/api/triggers`, { entity_type, entity_id });
       setNotification({ type: 'success', message: '✓ Validation queued successfully!' });
       triggers.refresh();
       queueStats.refresh();
@@ -426,8 +461,9 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen font-sans">
-      <Sidebar view={view} setView={setView} />
+    <CurrentUserContext.Provider value={currentUser}>
+      <div className="flex h-screen font-sans">
+        <Sidebar view={view} setView={setView} />
       <div className="ml-48 flex-1 p-10 overflow-y-auto">
         <h1 className="mt-0 text-3xl font-bold text-gray-100">LiveValidator Control Panel</h1>
 
@@ -578,8 +614,13 @@ export default function App() {
           />
         )}
 
+        {/* Admin View */}
+        {view === 'admin' && <AdminView />}
+
+        {/* Setup View */}
         {view === 'setup' && <SetupView />}
       </div>
     </div>
+    </CurrentUserContext.Provider>
   );
 }

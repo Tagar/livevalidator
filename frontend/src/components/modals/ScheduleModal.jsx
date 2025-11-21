@@ -7,8 +7,7 @@ export function ScheduleModal({ schedule, onSave, onClose }) {
     cron_expr: schedule?.cron_expr || "0 0 * * *",
     timezone: schedule?.timezone || "UTC",
     enabled: schedule?.enabled ?? true,
-    version: schedule?.version || 0,
-    updated_by: "user@company.com"
+    version: schedule?.version || 0
   }));
   
   const [timezones, setTimezones] = useState(['UTC']);
