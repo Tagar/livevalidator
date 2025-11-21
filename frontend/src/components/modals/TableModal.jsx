@@ -26,8 +26,7 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
     tgt_system_id: table?.tgt_system_id || (systems[1]?.id || 2),
     compare_mode: table?.compare_mode || "except_all",
     pk_columns: table?.pk_columns || [],
-    watermark_column: table?.watermark_column || "",
-    include_columns: table?.include_columns || [],
+    watermark_filter: table?.watermark_filter || "",
     exclude_columns: table?.exclude_columns || [],
     version: table?.version || 0
   }));
@@ -176,32 +175,25 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
               className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" 
             />
           </div>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="block mb-1 font-medium text-gray-400 text-sm">Compare Mode</label>
-              <select value={form.compare_mode} onChange={e=>setForm({...form, compare_mode:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500">
-                <option value="except_all">Except All</option>
-                <option value="primary_key">Primary Key</option>
-              </select>
-            </div>
-            <div>
-              <label className="block mb-1 font-medium text-gray-400 text-sm">Watermark Column</label>
-              <input value={form.watermark_column} onChange={e=>setForm({...form, watermark_column:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Optional" />
-            </div>
+          <div className="mb-3">
+            <label className="block mb-1 font-medium text-gray-400 text-sm">Compare Mode</label>
+            <select value={form.compare_mode} onChange={e=>setForm({...form, compare_mode:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500">
+              <option value="except_all">Except All</option>
+              <option value="primary_key">Primary Key</option>
+            </select>
+          </div>
+          <div className="mb-3">
+            <label className="block mb-1 font-medium text-gray-400 text-sm">Watermark Filter</label>
+            <input value={form.watermark_filter} onChange={e=>setForm({...form, watermark_filter:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="e.g., created_at > '2024-01-01' OR status = 'active'" />
+            <p className="text-gray-500 text-xs mt-1">Optional WHERE clause to filter rows before comparison (applied to both source and target)</p>
           </div>
           <div className="mb-3">
             <label className="block mb-1 font-medium text-gray-400 text-sm">Primary Key Columns (comma-separated)</label>
             <input value={Array.isArray(form.pk_columns)?form.pk_columns.join(','):''} onChange={e=>setForm({...form, pk_columns:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="id, user_id" />
           </div>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="block mb-1 font-medium text-gray-400 text-sm">Include Columns (comma-separated)</label>
-              <input value={Array.isArray(form.include_columns)?form.include_columns.join(','):''} onChange={e=>setForm({...form, include_columns:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Optional" />
-            </div>
-            <div>
-              <label className="block mb-1 font-medium text-gray-400 text-sm">Exclude Columns (comma-separated)</label>
-              <input value={Array.isArray(form.exclude_columns)?form.exclude_columns.join(','):''} onChange={e=>setForm({...form, exclude_columns:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Optional" />
-            </div>
+          <div className="mb-3">
+            <label className="block mb-1 font-medium text-gray-400 text-sm">Exclude Columns (comma-separated)</label>
+            <textarea value={Array.isArray(form.exclude_columns)?form.exclude_columns.join(', '):''} onChange={e=>setForm({...form, exclude_columns:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})} rows={3} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="column1, column2, column3" />
           </div>
           
           {/* Tags */}

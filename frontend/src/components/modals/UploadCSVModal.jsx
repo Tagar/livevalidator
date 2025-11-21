@@ -138,7 +138,7 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">is_active</code> - true/false (defaults to true)</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">compare_mode</code> - except_all, union, intersect (defaults to except_all)</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">pk_columns</code> - Comma-separated primary key columns</li>
-                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">watermark_column</code> - Watermark column name</li>
+                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">watermark_filter</code> - Optional WHERE clause filter expression</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">include_columns</code> - Comma-separated columns to include</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">exclude_columns</code> - Comma-separated columns to exclude</li>
                     </ul>

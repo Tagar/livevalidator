@@ -249,7 +249,7 @@ async def create_table(body: TableIn):
         INSERT INTO control.datasets (
           name, src_system_id, src_schema, src_table,
           tgt_system_id, tgt_schema, tgt_table,
-          compare_mode, pk_columns, watermark_column, include_columns, exclude_columns,
+          compare_mode, pk_columns, watermark_filter, include_columns, exclude_columns,
           options, is_active, created_by, updated_by
         ) VALUES (
           $1,$2,$3,$4, $5,$6,$7, $8,$9,$10,$11,$12, $13,$14,$15,$15
@@ -257,7 +257,7 @@ async def create_table(body: TableIn):
     """,
     body.name, body.src_system_id, body.src_schema, body.src_table,
     body.tgt_system_id, body.tgt_schema, body.tgt_table,
-    body.compare_mode, body.pk_columns, body.watermark_column, body.include_columns, body.exclude_columns,
+    body.compare_mode, body.pk_columns, body.watermark_filter, body.include_columns, body.exclude_columns,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email)
     return dict(row)
 
@@ -282,7 +282,7 @@ async def update_table(id: int, body: TableUpdate):
           tgt_table     = COALESCE($8, tgt_table),
           compare_mode  = COALESCE($9, compare_mode),
           pk_columns    = COALESCE($10, pk_columns),
-          watermark_column = COALESCE($11, watermark_column),
+          watermark_filter = COALESCE($11, watermark_filter),
           include_columns  = COALESCE($12, include_columns),
           exclude_columns  = COALESCE($13, exclude_columns),
           options = COALESCE($14, options),
@@ -295,7 +295,7 @@ async def update_table(id: int, body: TableUpdate):
     """,
     id, body.name, body.src_system_id, body.src_schema, body.src_table,
     body.tgt_system_id, body.tgt_schema, body.tgt_table,
-    body.compare_mode, body.pk_columns, body.watermark_column, body.include_columns, body.exclude_columns,
+    body.compare_mode, body.pk_columns, body.watermark_filter, body.include_columns, body.exclude_columns,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.datasets WHERE id=$1", id)
@@ -340,7 +340,7 @@ async def bulk_create_tables(body: BulkTableRequest):
                       tgt_table = $7,
                       compare_mode = $8,
                       pk_columns = $9,
-                      watermark_column = $10,
+                      watermark_filter = $10,
                       include_columns = $11,
                       exclude_columns = $12,
                       is_active = $13,
@@ -352,7 +352,7 @@ async def bulk_create_tables(body: BulkTableRequest):
                 """,
                 existing['id'], body.src_system_id, item.src_schema, item.src_table,
                 body.tgt_system_id, tgt_schema, tgt_table,
-                item.compare_mode, item.pk_columns, item.watermark_column,
+                item.compare_mode, item.pk_columns, item.watermark_filter,
                 item.include_columns or [], item.exclude_columns or [],
                 item.is_active, user_email)
                 results["updated"].append({"row": idx + 1, "name": name, "data": dict(row)})
@@ -362,7 +362,7 @@ async def bulk_create_tables(body: BulkTableRequest):
                     INSERT INTO control.datasets (
                       name, src_system_id, src_schema, src_table,
                       tgt_system_id, tgt_schema, tgt_table,
-                      compare_mode, pk_columns, watermark_column,
+                      compare_mode, pk_columns, watermark_filter,
                       include_columns, exclude_columns,
                       is_active, created_by, updated_by
                     ) VALUES (
@@ -371,7 +371,7 @@ async def bulk_create_tables(body: BulkTableRequest):
                 """,
                 name, body.src_system_id, item.src_schema, item.src_table,
                 body.tgt_system_id, tgt_schema, tgt_table,
-                item.compare_mode, item.pk_columns, item.watermark_column,
+                item.compare_mode, item.pk_columns, item.watermark_filter,
                 item.include_columns or [], item.exclude_columns or [],
                 item.is_active, user_email)
                 
@@ -452,14 +452,14 @@ async def create_query(body: QueryIn):
     row = await fetchrow("""
         INSERT INTO control.compare_queries (
           name, src_system_id, tgt_system_id, sql,
-          compare_mode, pk_columns,
+          compare_mode, pk_columns, watermark_filter,
           options, is_active, created_by, updated_by
         ) VALUES (
-          $1,$2,$3,$4, $5,$6, $7,$8,$9,$9
+          $1,$2,$3,$4, $5,$6,$7, $8,$9,$10,$10
         ) RETURNING *
     """,
     body.name, body.src_system_id, body.tgt_system_id, body.sql,
-    body.compare_mode, body.pk_columns,
+    body.compare_mode, body.pk_columns, body.watermark_filter,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email)
     return dict(row)
 
@@ -481,16 +481,17 @@ async def update_query(id: int, body: QueryUpdate):
           sql           = COALESCE($5, sql),
           compare_mode  = COALESCE($6, compare_mode),
           pk_columns    = COALESCE($7, pk_columns),
-          options = COALESCE($8, options),
-          is_active = COALESCE($9, is_active),
-          updated_by = $10,
+          watermark_filter = COALESCE($8, watermark_filter),
+          options = COALESCE($9, options),
+          is_active = COALESCE($10, is_active),
+          updated_by = $11,
           updated_at = now(),
           version = version + 1
-        WHERE id=$1 AND version=$11
+        WHERE id=$1 AND version=$12
         RETURNING *
     """,
     id, body.name, body.src_system_id, body.tgt_system_id, body.sql,
-    body.compare_mode, body.pk_columns,
+    body.compare_mode, body.pk_columns, body.watermark_filter,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.compare_queries WHERE id=$1", id)
@@ -530,15 +531,16 @@ async def bulk_create_queries(body: BulkQueryRequest):
                       tgt_system_id = $4,
                       compare_mode = $5,
                       pk_columns = $6,
-                      is_active = $7,
-                      updated_by = $8,
+                      watermark_filter = $7,
+                      is_active = $8,
+                      updated_by = $9,
                       updated_at = now(),
                       version = version + 1
                     WHERE id=$1
                     RETURNING *
                 """,
                 existing['id'], body.src_system_id, item.sql, body.tgt_system_id,
-                item.compare_mode, item.pk_columns, 
+                item.compare_mode, item.pk_columns, item.watermark_filter,
                 item.is_active, user_email)
                 results["updated"].append({"row": idx + 1, "name": name, "data": dict(row)})
             else:
@@ -546,14 +548,14 @@ async def bulk_create_queries(body: BulkQueryRequest):
                 row = await fetchrow("""
                     INSERT INTO control.compare_queries (
                       name, src_system_id, sql, tgt_system_id,
-                      compare_mode, pk_columns,
+                      compare_mode, pk_columns, watermark_filter,
                       is_active, created_by, updated_by
                     ) VALUES (
-                      $1,$2,$3,$4,$5,$6,$7,$8,$8
+                      $1,$2,$3,$4,$5,$6,$7,$8,$9,$9
                     ) RETURNING *
                 """,
                 name, body.src_system_id, item.sql, body.tgt_system_id,
-                item.compare_mode, item.pk_columns,
+                item.compare_mode, item.pk_columns, item.watermark_filter,
                 item.is_active, user_email)
                 
                 # Bind to schedule
@@ -1681,13 +1683,21 @@ async def create_system(body: SystemIn):
     row = await fetchrow("""
         INSERT INTO control.systems (
           name, kind, catalog, host, port, database, user_secret_key, pass_secret_key, jdbc_string,
-          concurrency, options, is_active, created_by, updated_by
+          concurrency, max_rows, options, is_active, created_by, updated_by
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9, $10,$11,$12,$13,$13
+          $1,$2,$3,$4,$5,$6,$7,$8,$9, $10,$11,$12,$13,$14,$14
         ) RETURNING *
     """,
-    body.name, body.kind, body.catalog.strip(), body.host.strip(), body.port, body.database.strip(), 
-    body.user_secret_key.strip(), body.pass_secret_key.strip(), body.jdbc_string.strip(), body.concurrency,
+    body.name, body.kind, 
+    body.catalog.strip() if body.catalog else None, 
+    body.host.strip() if body.host else None, 
+    body.port, 
+    body.database.strip() if body.database else None, 
+    body.user_secret_key.strip() if body.user_secret_key else None, 
+    body.pass_secret_key.strip() if body.pass_secret_key else None, 
+    body.jdbc_string.strip() if body.jdbc_string else None, 
+    body.concurrency,
+    body.max_rows,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email)
     return dict(row)
 
@@ -1716,16 +1726,18 @@ async def update_system(id: int, body: SystemUpdate):
           pass_secret_key = COALESCE($9, pass_secret_key),
           jdbc_string = COALESCE($10, jdbc_string),
           concurrency = COALESCE($11, concurrency),
-          options = COALESCE($12, options),
-          is_active = COALESCE($13, is_active),
-          updated_by = $14,
+          max_rows = COALESCE($12, max_rows),
+          options = COALESCE($13, options),
+          is_active = COALESCE($14, is_active),
+          updated_by = $15,
           updated_at = now(),
           version = version + 1
-        WHERE id=$1 AND version=$15
+        WHERE id=$1 AND version=$16
         RETURNING *
     """,
     id, body.name, body.kind, body.catalog, body.host, body.port, body.database, 
     body.user_secret_key, body.pass_secret_key, body.jdbc_string, body.concurrency,
+    body.max_rows,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.systems WHERE id=$1", id)

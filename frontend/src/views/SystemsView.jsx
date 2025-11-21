@@ -49,6 +49,11 @@ export function SystemsView({
                     <p className="text-gray-400 text-sm mb-1">
                       <strong>Concurrency:</strong> {row.concurrency === -1 ? 'Unlimited' : row.concurrency === 0 ? 'Disabled' : row.concurrency}
                     </p>
+                    {row.max_rows !== null && row.max_rows !== undefined && (
+                      <p className="text-gray-400 text-sm mb-1">
+                        <strong>Max Rows:</strong> {row.max_rows.toLocaleString()}
+                      </p>
+                    )}
                   </>
                 )}
                 

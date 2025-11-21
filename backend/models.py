@@ -16,7 +16,7 @@ class TableIn(BaseModel):
     tgt_table: Optional[str] = None
     compare_mode: Literal['except_all','primary_key','hash'] = 'except_all'
     pk_columns: Optional[list[str]] = None
-    watermark_column: Optional[str] = None
+    watermark_filter: Optional[str] = None
     include_columns: list[str] = Field(default_factory=list)
     exclude_columns: list[str] = Field(default_factory=list)
     options: dict = Field(default_factory=dict)
@@ -33,7 +33,7 @@ class TableUpdate(BaseModel):
     tgt_table: Optional[str] = None
     compare_mode: Optional[Literal['except_all','primary_key','hash']] = None
     pk_columns: Optional[list[str]] = None
-    watermark_column: Optional[str] = None
+    watermark_filter: Optional[str] = None
     include_columns: Optional[list[str]] = None
     exclude_columns: Optional[list[str]] = None
     options: Optional[dict] = None
@@ -50,7 +50,7 @@ class BulkTableItem(BaseModel):
     schedule_name: str
     compare_mode: Optional[Literal['except_all','primary_key','hash']] = 'except_all'
     pk_columns: Optional[list[str]] = None
-    watermark_column: Optional[str] = None
+    watermark_filter: Optional[str] = None
     include_columns: Optional[list[str]] = None
     exclude_columns: Optional[list[str]] = None
     is_active: Optional[bool] = True
@@ -70,6 +70,7 @@ class QueryIn(BaseModel):
     sql: str
     compare_mode: Literal['except_all','primary_key','hash'] = 'except_all'
     pk_columns: Optional[list[str]] = None
+    watermark_filter: Optional[str] = None
     options: dict = Field(default_factory=dict)
     is_active: bool = True
 
@@ -81,6 +82,7 @@ class QueryUpdate(BaseModel):
     sql: Optional[str] = None
     compare_mode: Optional[Literal['except_all','primary_key','hash']] = None
     pk_columns: Optional[list[str]] = None
+    watermark_filter: Optional[str] = None
     options: Optional[dict] = None
     is_active: Optional[bool] = None
     version: int
@@ -92,6 +94,7 @@ class BulkQueryItem(BaseModel):
     schedule_name: str
     compare_mode: Optional[Literal['except_all','primary_key','hash']] = 'except_all'
     pk_columns: Optional[list[str]] = None
+    watermark_filter: Optional[str] = None
     is_active: Optional[bool] = True
 
 
@@ -173,6 +176,7 @@ class SystemIn(BaseModel):
     pass_secret_key: Optional[str] = None
     jdbc_string: Optional[str] = None
     concurrency: int = -1
+    max_rows: Optional[int] = None
     options: dict = Field(default_factory=dict)
     is_active: bool = True
 
@@ -188,6 +192,7 @@ class SystemUpdate(BaseModel):
     pass_secret_key: Optional[str] = None
     jdbc_string: Optional[str] = None
     concurrency: Optional[int] = None
+    max_rows: Optional[int] = None
     options: Optional[dict] = None
     is_active: Optional[bool] = None
     version: int

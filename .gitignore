@@ -13,3 +13,4 @@ frontend/build/
 # Keep dist/ in git for Databricks deployment
 # But you need to manually rebuild before committing UI changes
 server.log
+backend/sql/migrate_*.sql

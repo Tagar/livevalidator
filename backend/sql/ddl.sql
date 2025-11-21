@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS control.systems (
   pass_secret_key   TEXT,
   jdbc_string       TEXT,
   concurrency       INTEGER NOT NULL DEFAULT -1,
+  max_rows          INTEGER DEFAULT NULL,              -- Max rows to pull during validation (NULL = unlimited)
   options           JSONB NOT NULL DEFAULT '{}'::jsonb,
   is_active         BOOLEAN NOT NULL DEFAULT TRUE,
   created_by        TEXT NOT NULL,
@@ -34,7 +35,7 @@ CREATE TABLE IF NOT EXISTS control.datasets (
 
   compare_mode     TEXT NOT NULL DEFAULT 'except_all',   -- 'except_all' | 'primary_key' | 'hash'
   pk_columns       TEXT[] DEFAULT NULL,                  -- for primary_key mode
-  watermark_column TEXT DEFAULT NULL,                    -- optional time/seq filter
+  watermark_filter TEXT DEFAULT NULL,                    -- optional WHERE clause filter (e.g., "created_at > '2024-01-01'")
   include_columns  TEXT[] NOT NULL DEFAULT '{}',         -- default: compare all
   exclude_columns  TEXT[] NOT NULL DEFAULT '{}',
   options          JSONB NOT NULL DEFAULT '{}'::jsonb,   -- tolerances, null eq, coercions
@@ -62,6 +63,7 @@ CREATE TABLE IF NOT EXISTS control.compare_queries (
 
   compare_mode     TEXT NOT NULL DEFAULT 'except_all',   -- same options as datasets
   pk_columns       TEXT[] DEFAULT NULL,
+  watermark_filter TEXT DEFAULT NULL,                    -- optional WHERE clause filter
   options          JSONB NOT NULL DEFAULT '{}'::jsonb,
   is_active        BOOLEAN NOT NULL DEFAULT TRUE,
   config_overrides JSONB DEFAULT NULL,                   -- entity-specific validation config overrides

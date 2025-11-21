@@ -2,20 +2,31 @@ import React, { useState, useRef } from 'react';
 
 const SYSTEM_KINDS = ['Databricks', 'Netezza', 'Teradata', 'Oracle', 'Postgres', 'SQLServer', 'MySQL', 'other'];
 
+// Helper to determine default max_rows based on system kind
+const getDefaultMaxRows = (kind) => {
+  // Databricks and Snowflake: unlimited (null)
+  // All others: 1,000,000 default
+  return ['Databricks', 'Snowflake'].includes(kind) ? null : 1000000;
+};
+
 export function SystemModal({ system, onSave, onClose }) {
-  const [form, setForm] = useState(() => ({
-    name: system?.name || "New System",
-    kind: system?.kind || "Databricks",
-    catalog: system?.catalog || "",
-    host: system?.host || "",
-    port: system?.port || 443,
-    database: system?.database || "",
-    user_secret_key: system?.user_secret_key || "",
-    pass_secret_key: system?.pass_secret_key || "",
-    jdbc_string: system?.jdbc_string || "",
-    concurrency: system?.concurrency ?? -1,
-    version: system?.version || 0
-  }));
+  const [form, setForm] = useState(() => {
+    const initialKind = system?.kind || "Databricks";
+    return {
+      name: system?.name || "New System",
+      kind: initialKind,
+      catalog: system?.catalog || "",
+      host: system?.host || "",
+      port: system?.port || 443,
+      database: system?.database || "",
+      user_secret_key: system?.user_secret_key || "",
+      pass_secret_key: system?.pass_secret_key || "",
+      jdbc_string: system?.jdbc_string || "",
+      concurrency: system?.concurrency ?? -1,
+      max_rows: system?.max_rows !== undefined ? system.max_rows : getDefaultMaxRows(initialKind),
+      version: system?.version || 0
+    };
+  });
   
   const handleSave = async () => {
     await onSave(form);
@@ -54,7 +65,15 @@ export function SystemModal({ system, onSave, onClose }) {
           {/* Kind - Dropdown */}
           <div className="mb-3">
             <label className="block mb-1 font-medium text-gray-400 text-sm">Type</label>
-            <select value={form.kind} onChange={e=>setForm({...form, kind:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500">
+            <select value={form.kind} onChange={e=>{
+              const newKind = e.target.value;
+              setForm({
+                ...form, 
+                kind: newKind,
+                // Update max_rows default when changing kind (only if not editing existing system with explicit value)
+                max_rows: system?.max_rows !== undefined ? form.max_rows : getDefaultMaxRows(newKind)
+              });
+            }} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500">
               {SYSTEM_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
             </select>
           </div>
@@ -108,6 +127,12 @@ export function SystemModal({ system, onSave, onClose }) {
                 <label className="block mb-1 font-medium text-gray-400 text-sm">Concurrency Limit</label>
                 <input type="number" value={form.concurrency} onChange={e=>setForm({...form, concurrency:+e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="-1 for unlimited" />
                 <p className="text-xs text-gray-500 mt-1">-1 = unlimited, 0 = disabled, positive = max concurrent connections</p>
+              </div>
+              
+              <div className="mb-3">
+                <label className="block mb-1 font-medium text-gray-400 text-sm">Max Rows per Query</label>
+                <input type="number" value={form.max_rows ?? ""} onChange={e=>setForm({...form, max_rows: e.target.value ? +e.target.value : null})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Default: 1,000,000" />
+                <p className="text-xs text-gray-500 mt-1">Limits rows pulled during validation to protect system performance (empty = unlimited)</p>
               </div>
             </>
           )}
