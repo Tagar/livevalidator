@@ -10,8 +10,9 @@ import requests
 import traceback
 from datetime import datetime, date, UTC
 from decimal import Decimal
+from collections.abc import Callable
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, regexp_replace, translate
+from pyspark.sql.functions import col, regexp_replace, translate, xxhash64
 from databricks.sdk import WorkspaceClient
 
 # Initialize workspace client for auth
@@ -340,13 +341,38 @@ def _downgrade_unicode(df: DataFrame):
 # COMMAND ----------
 # DBTITLE 1,Run row-level validation
 
-def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
+def run_except_all(src_df: DataFrame, tgt_df: DataFrame):
+    return src_df.exceptAll(tgt_df)
+
+def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str] = pk_columns):
+    def rowhash_exact(df):
+        # treat the entire row as a struct for native Spark hashing
+        cols = [col(c) for c in df.columns]     # no casts
+        return df.withColumn("__hash__", xxhash64(*cols))
+    
+    src_df_hash = rowhash_exact(src_df)
+    tgt_df_hash = rowhash_exact(tgt_df)
+
+    joined = src_df_hash.join(tgt_df_hash, pk, "fullouter") \
+                .select(*pk,
+                        src_df_hash["__hash__"].alias("h_lhs"),
+                        tgt_df_hash["__hash__"].alias("h_rhs"))
+
+    mismatch_df = joined.filter(
+        (col("h_lhs") != col("h_rhs")) |
+        col("h_lhs").isNull() | col("h_rhs").isNull()
+    )
+
+    return mismatch_df
+
+def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode: str) -> dict:
     """Row-level validation using EXCEPT ALL"""
     cols: list[str] = [c for c in src_df.columns if c not in exclude]
     src_filtered: DataFrame = src_df.select(*cols)
     tgt_filtered: DataFrame = tgt_df.select(*cols)
+    comparison_func: Callable = run_except_all if mode == "except_all" else run_pk_compare
     
-    diff_df: DataFrame = src_filtered.exceptAll(tgt_filtered)
+    diff_df: DataFrame = comparison_func(src_filtered, tgt_filtered)
     diff_count: int = diff_df.count()
     if not diff_count:
         return {
@@ -358,7 +384,7 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> d
         print(f"Found {str(diff_count)} mis-matches, trying again with unicode downgraded...")
         src_filtered = _downgrade_unicode(src_filtered)
         tgt_filtered = _downgrade_unicode(tgt_filtered)
-        diff_df: DataFrame = src_filtered.exceptAll(tgt_filtered)
+        diff_df: DataFrame = comparison_func(src_filtered, tgt_filtered)
 
         diff_count: int = diff_df.count()
         if not diff_count:
@@ -369,7 +395,6 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> d
     
     print(f"Found {diff_count} differences, extracting sample")
 
-    # tgt_filtered.exceptAll(src_filtered).count() -- use this later
     sample: list = diff_df.limit(10).collect()
     
     # Convert datetime/decimal objects to JSON-serializable formats
@@ -442,12 +467,13 @@ try:
         src_df: DataFrame = src_df.limit(src_conn["system"]["max_rows"])
     if tgt_conn["system"]["max_rows"]:
         print(f"Limiting target system {target_system_name} for row value check...")
-        tgt_df: DataFrame = tgt_df.limit(tgt_conn["system"]["max_rows"])
+        tgt_conn: DataFrame = src_df.limit(tgt_conn["system"]["max_rows"])
     
     # Row-level only if counts match AND compare_mode requires it
-    if count_result["row_count_match"] and compare_mode == "except_all":
-        print("Validating rows...")
-        result.update(validate_rows(src_df, tgt_df, exclude_columns))
+    if count_result["row_count_match"]:
+        print(f"Validating rows using {compare_mode}...")
+        validation_results: dict = validate_rows(src_df, tgt_df, exclude_columns, compare_mode)
+        result.update(validation_results)
         result["rows_matched"] = max(result["rows_compared"] - result["rows_different"], 0)
     else:
         # Row counts don't match - skip row-level comparison (not applicable)
