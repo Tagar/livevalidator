@@ -160,6 +160,7 @@ class TriggerIn(BaseModel):
     schedule_id: Optional[int] = None
     entity_type: Literal['table', 'compare_query']
     entity_id: int
+    requested_by: Optional[str] = None
     priority: int = 100
     params: dict = Field(default_factory=dict)
 

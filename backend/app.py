@@ -196,6 +196,7 @@ async def list_tables(q: str | None = None):
                 vh.id as last_run_id,
                 vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp,
+                vh.error_message as last_run_error,
                 COALESCE(
                     (SELECT json_agg(t.name ORDER BY t.name)
                      FROM control.entity_tags et
@@ -205,7 +206,7 @@ async def list_tables(q: str | None = None):
                 ) as tags
             FROM control.datasets d
             LEFT JOIN LATERAL (
-                SELECT id, status, finished_at
+                SELECT id, status, finished_at, error_message
                 FROM control.validation_history
                 WHERE entity_type = 'table' AND entity_id = d.id
                 ORDER BY finished_at DESC
@@ -221,6 +222,7 @@ async def list_tables(q: str | None = None):
                 vh.id as last_run_id,
                 vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp,
+                vh.error_message as last_run_error,
                 COALESCE(
                     (SELECT json_agg(t.name ORDER BY t.name)
                      FROM control.entity_tags et
@@ -230,7 +232,7 @@ async def list_tables(q: str | None = None):
                 ) as tags
             FROM control.datasets d
             LEFT JOIN LATERAL (
-                SELECT id, status, finished_at
+                SELECT id, status, finished_at, error_message
                 FROM control.validation_history
                 WHERE entity_type = 'table' AND entity_id = d.id
                 ORDER BY finished_at DESC
@@ -400,6 +402,7 @@ async def list_queries(q: str | None = None):
                 vh.id as last_run_id,
                 vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp,
+                vh.error_message as last_run_error,
                 COALESCE(
                     (SELECT json_agg(t.name ORDER BY t.name)
                      FROM control.entity_tags et
@@ -409,7 +412,7 @@ async def list_queries(q: str | None = None):
                 ) as tags
             FROM control.compare_queries cq
             LEFT JOIN LATERAL (
-                SELECT id, status, finished_at
+                SELECT id, status, finished_at, error_message
                 FROM control.validation_history
                 WHERE entity_type = 'compare_query' AND entity_id = cq.id
                 ORDER BY finished_at DESC
@@ -425,6 +428,7 @@ async def list_queries(q: str | None = None):
                 vh.id as last_run_id,
                 vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp,
+                vh.error_message as last_run_error,
                 COALESCE(
                     (SELECT json_agg(t.name ORDER BY t.name)
                      FROM control.entity_tags et
@@ -434,7 +438,7 @@ async def list_queries(q: str | None = None):
                 ) as tags
             FROM control.compare_queries cq
             LEFT JOIN LATERAL (
-                SELECT id, status, finished_at
+                SELECT id, status, finished_at, error_message
                 FROM control.validation_history
                 WHERE entity_type = 'compare_query' AND entity_id = cq.id
                 ORDER BY finished_at DESC
@@ -752,13 +756,15 @@ async def create_triggers_bulk(triggers: list[TriggerIn]):
     if not triggers:
         return {"created": []}
     
+    user_email = get_user_email()
+    
     # Extract arrays for each column
     sources = [t.source for t in triggers]
     schedule_ids = [t.schedule_id for t in triggers]
     entity_types = [t.entity_type for t in triggers]
     entity_ids = [t.entity_id for t in triggers]
     priorities = [t.priority for t in triggers]
-    requested_bys = [t.requested_by for t in triggers]
+    requested_bys = [t.requested_by or user_email for t in triggers]
     params_json = [json.dumps(t.params) if isinstance(t.params, (dict, list)) else t.params for t in triggers]
     
     # Bulk INSERT using unnest() - clean and efficient
@@ -1514,7 +1520,7 @@ async def fail_trigger(id: int, body: dict):
             source, requested_by, requested_at, started_at, finished_at,
             source_system_id, target_system_id,
             source_system_name, target_system_name,
-            compare_mode, status, error_message, databricks_run_id, databricks_run_url
+            compare_mode, status, error_message, error_details, databricks_run_id, databricks_run_url
         ) SELECT 
             $1, t.entity_type, t.entity_id, 
             CASE t.entity_type WHEN 'table' THEN d.name ELSE q.name END,
@@ -1523,14 +1529,14 @@ async def fail_trigger(id: int, body: dict):
             COALESCE(d.tgt_system_id, q.tgt_system_id),
             src.name, tgt.name,
             COALESCE(d.compare_mode, q.compare_mode),
-            $2, $3, t.databricks_run_id, t.databricks_run_url
+            $2, $3, $4, t.databricks_run_id, t.databricks_run_url
         FROM control.triggers t
         LEFT JOIN control.datasets d ON t.entity_type = 'table' AND t.entity_id = d.id
         LEFT JOIN control.compare_queries q ON t.entity_type = 'compare_query' AND t.entity_id = q.id
         LEFT JOIN control.systems src ON COALESCE(d.src_system_id, q.src_system_id) = src.id
         LEFT JOIN control.systems tgt ON COALESCE(d.tgt_system_id, q.tgt_system_id) = tgt.id
         WHERE t.id = $1
-    """, id, body.get('status', 'Error'), body.get('error', 'Worker failed to launch job'))
+    """, id, body.get('status', 'error'), body.get('error_message', 'Worker failed to launch job'), json.dumps(body.get('error_details', {})))
     
     # Remove from queue
     await execute("DELETE FROM control.triggers WHERE id=$1", id)

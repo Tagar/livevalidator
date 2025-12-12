@@ -54,9 +54,9 @@ source_table: str | None = dbutils.widgets.get("source_table") or None
 target_table: str | None = dbutils.widgets.get("target_table") or None
 sql: str | None = dbutils.widgets.get("sql") or None
 compare_mode: str = dbutils.widgets.get("compare_mode")
-pk_columns: list[str] = json.loads(dbutils.widgets.get("pk_columns") or "[]")
-include_columns: list[str] = json.loads(dbutils.widgets.get("include_columns") or "[]")
-exclude_columns: list[str] = json.loads(dbutils.widgets.get("exclude_columns") or "[]")
+pk_columns: list[str] = [c for c in json.loads(dbutils.widgets.get("pk_columns") or "[]") if c]
+include_columns: list[str] = [c for c in json.loads(dbutils.widgets.get("include_columns") or "[]") if c]
+exclude_columns: list[str] = [c for c in json.loads(dbutils.widgets.get("exclude_columns") or "[]") if c]
 downgrade_unicode: bool = dbutils.widgets.get("downgrade_unicode").lower() == "true"
 replace_special_char: list[str] = json.loads(dbutils.widgets.get("replace_special_char") or "[]")
 extra_replace_regex: str = dbutils.widgets.get("extra_replace_regex")
@@ -81,9 +81,6 @@ if compare_mode not in ["except_all", "primary_key"]:
             "error_details": {"type": type(error).__name__}
         })
     raise ValueError(error)
-
-# interim support primary_key
-compare_mode = "except_all" if compare_mode == "primary_key" else compare_mode
 
 if len(replace_special_char) not in (0,2):
     error: str = f'Malformmatted "replace_special_char" argument. Must be format [<max allowable hex>, <replacement char>] e.g. ["7F", "?"] or ["FF", "�"]'
@@ -269,6 +266,8 @@ def serialize_value(val):
             return val.isoformat()
         case Decimal():
             return float(val)
+        case _ if hasattr(val, 'item'):  # numpy scalar (int64, float64, etc.)
+            return val.item()
         case _:
             return val
 
@@ -353,7 +352,7 @@ def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str] = pk_colu
     src_df_hash = rowhash_exact(src_df)
     tgt_df_hash = rowhash_exact(tgt_df)
 
-    joined = src_df_hash.join(tgt_df_hash, pk, "fullouter") \
+    joined = src_df_hash.join(tgt_df_hash, pk, "leftouter") \
                 .select(*pk,
                         src_df_hash["__hash__"].alias("h_lhs"),
                         tgt_df_hash["__hash__"].alias("h_rhs"))
@@ -465,12 +464,26 @@ try:
     if src_conn["system"]["max_rows"]:
         print(f"Limiting source system {source_system_name} for row value check...")
         src_df: DataFrame = src_df.limit(src_conn["system"]["max_rows"])
+        result["rows_compared"] = src_conn["system"]["max_rows"]
     if tgt_conn["system"]["max_rows"]:
-        print(f"Limiting target system {target_system_name} for row value check...")
-        tgt_conn: DataFrame = src_df.limit(tgt_conn["system"]["max_rows"])
+        print(f"Ignoring target system max row limit of '{src_conn["system"]["max_rows"]}', can only be applied to source system...")
     
     # Row-level only if counts match AND compare_mode requires it
     if count_result["row_count_match"]:
+
+        if compare_mode == "primary_key":
+            # validate the primary keys exist
+            pk_cols_l = (c.lower() for c in pk_columns)
+            tbl_cols_l = (c.lower() for c in src_df.columns)
+            if not set(pk_cols_l).issubset(tbl_cols_l):
+                raise ValueError(f"Incorrect Primary Key(s) specified. Column(s) not present: {str(pk_columns)} do not match the source tables columns {str(src_df.columns)}")
+
+            # validate the primary keys are unique
+            # to do, cache this information in the entity's table so we only do this once per entity since it is expensive for large tables
+            duplicate_pk = tgt_df.groupBy(*pk_columns).count().filter(col("count") > 1).limit(1).collect()
+            if duplicate_pk:
+                raise ValueError(f"Incorrect Primary Key(s) specified. Not unique: {duplicate_pk[0].asDict()}")
+        
         print(f"Validating rows using {compare_mode}...")
         validation_results: dict = validate_rows(src_df, tgt_df, exclude_columns, compare_mode)
         result.update(validation_results)

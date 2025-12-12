@@ -22,6 +22,7 @@ export function QueriesView({
 }) {
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [filterText, setFilterText] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
   const [filterTags, setFilterTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -61,7 +62,7 @@ export function QueriesView({
     return Array.from(tagSet).sort();
   }, [data]);
 
-  // Filter data based on search text (name and SQL content) and tags
+  // Filter data based on search text (name and SQL content), status, and tags
   const filteredData = useMemo(() => {
     let result = data;
     
@@ -74,6 +75,15 @@ export function QueriesView({
         const tgtSql = (row.tgt_sql || '').toLowerCase();
         return name.includes(search) || sql.includes(search) || tgtSql.includes(search);
       });
+    }
+    
+    // Apply status filter
+    if (filterStatus) {
+      if (filterStatus === 'none') {
+        result = result.filter(row => !row.last_run_status);
+      } else {
+        result = result.filter(row => row.last_run_status === filterStatus);
+      }
     }
     
     // Apply tag filter (AND logic - must have all selected tags)
@@ -91,7 +101,7 @@ export function QueriesView({
     });
     
     return result;
-  }, [data, filterText, filterTags]);
+  }, [data, filterText, filterStatus, filterTags]);
 
   // Handle select all (only filtered items)
   const handleSelectAll = (checked) => {
@@ -250,27 +260,41 @@ export function QueriesView({
       
       <div className="mb-3 flex gap-2">
         <button onClick={() => onEdit({})} className="px-3 py-2 text-base bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium">+ Add Query</button>
-        <button onClick={onUploadCSV} className="px-3 py-2 text-base bg-rust text-gray-100 border-0 rounded-md cursor-pointer hover:bg-rust-light transition-colors font-medium">📂 Upload CSV</button>
+        <button onClick={onUploadCSV} className="px-3 py-2 text-base bg-rust text-gray-100 border-0 rounded-md cursor-pointer hover:bg-rust-light transition-colors font-medium">Upload CSV</button>
+        <button onClick={onRefresh} className="px-3 py-2 text-base bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium ml-auto">Refresh</button>
       </div>
 
       {loading ? <p className="text-gray-400">Loading…</p> : (
         <div className="bg-charcoal-500 border border-charcoal-200 rounded-lg overflow-hidden">
           {/* Filter and Bulk Actions Bar */}
           <div className="p-2 bg-charcoal-400 border-b border-charcoal-200">
-            <div className="flex gap-2">
-              {/* Name/SQL Filter - 1/3 width */}
+            <div className="flex gap-2 items-center">
+              {/* Name/SQL Filter */}
               <input
                 type="text"
-                placeholder="Filter by name or SQL query..."
+                placeholder="Filter by name..."
                 value={filterText}
                 onChange={(e) => setFilterText(e.target.value)}
-                className="w-1/3 px-3 py-2 bg-charcoal-600 border border-charcoal-300 rounded text-gray-200 text-sm focus:outline-none focus:border-rust-light"
+                className="w-[36rem] px-3 py-1.5 bg-charcoal-600 border border-charcoal-300 rounded text-gray-200 text-sm focus:outline-none focus:border-rust-light"
               />
               
-              {/* Tag Filter - 1/3 width */}
-              <div className="relative w-1/3" ref={tagInputRef}>
+              {/* Status Filter */}
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-36 px-2 py-1.5 bg-charcoal-600 border border-charcoal-300 rounded text-gray-200 text-sm focus:outline-none focus:border-rust-light cursor-pointer"
+              >
+                <option value="">All Statuses</option>
+                <option value="succeeded">Succeeded</option>
+                <option value="failed">Failed</option>
+                <option value="error">Error</option>
+                <option value="none">No runs</option>
+              </select>
+              
+              {/* Tag Filter */}
+              <div className="relative w-40" ref={tagInputRef}>
                 <div 
-                  className="flex flex-wrap gap-1 items-center px-2 py-1.5 bg-charcoal-600 border border-charcoal-300 rounded min-h-[38px] cursor-text focus-within:border-rust-light"
+                  className="flex flex-wrap gap-1 items-center px-2 py-1 bg-charcoal-600 border border-charcoal-300 rounded min-h-[34px] cursor-text focus-within:border-rust-light"
                   onClick={() => inputElementRef.current?.focus()}
                 >
                   {filterTags.map(tag => (
@@ -279,7 +303,7 @@ export function QueriesView({
                   <input
                     ref={inputElementRef}
                     type="text"
-                    placeholder={filterTags.length === 0 ? "Filter by tags..." : ""}
+                    placeholder={filterTags.length === 0 ? "Tags..." : ""}
                     value={tagInput}
                     onChange={(e) => {
                       setTagInput(e.target.value);
@@ -287,7 +311,7 @@ export function QueriesView({
                     }}
                     onKeyDown={handleTagKeyDown}
                     onFocus={() => setShowSuggestions(true)}
-                    className="flex-1 min-w-[80px] bg-transparent border-0 text-gray-200 text-sm focus:outline-none placeholder-gray-500"
+                    className="flex-1 min-w-[40px] bg-transparent border-0 text-gray-200 text-sm focus:outline-none placeholder-gray-500"
                   />
                 </div>
                 {showSuggestions && tagSuggestions.length > 0 && (
@@ -309,8 +333,8 @@ export function QueriesView({
                 )}
               </div>
 
-              {/* Bulk Actions - 1/3 width */}
-              <div className="w-1/3 flex items-center gap-1.5">
+              {/* Bulk Actions */}
+              <div className="ml-auto flex items-center gap-1.5">
                 {someSelected ? (
                   <>
                     <span className="text-purple-300 font-medium text-sm whitespace-nowrap mr-1">{selectedIds.size} selected</span>
@@ -456,6 +480,14 @@ export function QueriesView({
                             title={`Last run: ${new Date(row.last_run_timestamp).toLocaleString()}`}
                           >
                             ✗ Failed
+                          </button>
+                        ) : row.last_run_status === 'error' ? (
+                          <button
+                            onClick={() => onNavigateToResult(row.last_run_id)}
+                            className="px-1.5 py-0.5 text-sm rounded-full bg-orange-900/40 text-orange-300 border border-orange-700 hover:bg-orange-900/60 transition-colors animate-pulse max-w-[200px] truncate"
+                            title={row.last_run_error || 'Unknown error'}
+                          >
+                            ⚠ {row.last_run_error ? row.last_run_error.substring(0, 30) + (row.last_run_error.length > 30 ? '...' : '') : 'Error'}
                           </button>
                         ) : (
                           <span className="px-1.5 py-0.5 text-sm rounded-full bg-gray-900/40 text-gray-500 border border-gray-700 whitespace-nowrap">

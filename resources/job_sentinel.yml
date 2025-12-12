@@ -25,7 +25,7 @@ resources:
               backend_api_url: ${var.backend_api_url}
               validation_job_id: ${resources.jobs.run_validation.id}
               poll_interval: "30"
-          max_retries: 5
+          max_retries: -1
 #          environment_key: default
           
 

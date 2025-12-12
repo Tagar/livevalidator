@@ -369,7 +369,7 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
       </div>
       
       {/* Summary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
         <div className="bg-charcoal-500 border border-charcoal-200 rounded-lg p-2.5">
           <div className="text-gray-400 text-sm mb-0.5">Total Validations</div>
           <div className="text-3xl font-bold text-gray-100">{filteredAndSortedData.length}</div>
@@ -389,6 +389,12 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
           <div className="text-red-400 text-sm mb-0.5">✗ Failed</div>
           <div className="text-3xl font-bold text-red-300">
             {filteredAndSortedData.filter(v => v.status === 'failed').length}
+          </div>
+        </div>
+        <div className="bg-orange-900/20 border border-orange-700 rounded-lg p-2.5">
+          <div className="text-orange-400 text-sm mb-0.5">⚠ Errors</div>
+          <div className="text-3xl font-bold text-orange-300">
+            {filteredAndSortedData.filter(v => v.status === 'error').length}
           </div>
         </div>
         <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-2.5">
@@ -530,6 +536,7 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
               <option value="">All Statuses</option>
               <option value="succeeded">Succeeded</option>
               <option value="failed">Failed</option>
+              <option value="error">Error</option>
             </select>
             <select
               value={filters.system_pair}
@@ -622,6 +629,13 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
                       {v.status === 'succeeded' ? (
                         <span className="px-1.5 py-0.5 text-sm rounded-full bg-green-900/40 text-green-300 border border-green-700 whitespace-nowrap">
                           ✓ Success
+                        </span>
+                      ) : v.status === 'error' ? (
+                        <span 
+                          className="px-1.5 py-0.5 text-sm rounded-full bg-orange-900/40 text-orange-300 border border-orange-700 whitespace-nowrap cursor-help"
+                          title={v.error_message || 'Unknown error'}
+                        >
+                          ⚠ Error
                         </span>
                       ) : (
                         <span className="px-1.5 py-0.5 text-sm rounded-full bg-red-900/40 text-red-300 border border-red-700 whitespace-nowrap">
