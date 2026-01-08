@@ -54,46 +54,57 @@ When differences are found, LiveValidator captures sample records and provides d
 
 ### Setup
 
-#### 1. Deploy DAB
+---
+
+#### Step 1: Deploy DAB
 
 ```bash
 databricks bundle deploy -t <your-target>
 ```
-Note: this may take 10+ minutes as it spins up Databricks App, LakeBase, etc.
 
-#### 2. Start App
+> **Note:** This may take 10+ minutes as it spins up Databricks App, LakeBase, etc.
+
+---
+
+#### Step 2: Start App
 
 ```bash
 # start the app's compute
 databricks apps start live-validator -t <your-target>
-# deploy the app
-databricks apps deploy live-validator --source-code-path /Workspace/LiveValidator/files/src/app -t migr-dev
-```
-Or simply navigate to Compute -> Apps and start it from the UI
 
-#### 3. Navigate to the app
-Inspect the app configuration page under Compute -> Apps
+# deploy the app
+databricks apps deploy live-validator --source-code-path /Workspace/LiveValidator/files/src/app -t <your-target>
+```
+
+Or simply navigate to **Compute → Apps** and start it from the UI.
+
+---
+
+#### Step 3: Navigate to the App
+
+Inspect the app configuration page under **Compute → Apps**:
 
 ![Compute Apps](docs/images/find-apps.png)
 
-Inspect the configuration and ensure the app has been properly deployed and is running. 
+Verify the app is running, then open the URL:
 
-Now navigate the app's url. The URL should look like:
 ```
 https://live-validator-<workspace-id>.aws.databricksapps.com/
 ```
 
 On first launch, you'll see a banner prompting you to go to the Setup page.
 
-#### 3. Setup Database
+---
 
-The rest of the setup instructions are located on the app's Setup page, but are included here as well.
+#### Step 4: Setup Database
 
-Click **"Go to Setup →"** to proceed with database initialization.
+> **Important:** Must be run by the LakeBase owner (whoever deployed the DAB).
+
+Click **"Go to Setup →"** to proceed with database initialization:
 
 ![Database Not Initialized Banner](docs/images/setup-banner.png)
 
-The owner of the LakeBase instance, who deployed the DAB initially, must run the following in Databricks SQL Editor attached to the live-validator Postgres compute.
+Open **Databricks SQL Editor** attached to the `live-validator` Postgres compute and run:
 
 ```sql
 CREATE USER apprunner WITH PASSWORD 'beepboop123';
@@ -110,30 +121,38 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA control
   GRANT USAGE, SELECT ON SEQUENCES TO apprunner;
 ```
 
-Run it in SQL Editor attached to your Postgres compute like so:
-
 ![Init database in SQL Editor](docs/images/init-database-1.png)
 
-#### 4. Initialize Metadata Tables
+---
 
-a. Click the button to initialize the tables:
+#### Step 5: Initialize Metadata Tables
 
-<img src="docs/images/init-database-2.png" alt="Initialize the tables" width="600"/>
+Click the button to initialize the tables:
 
-b. Before you move on, hard-refresh the app using `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows). 
+<img src="docs/images/init-database-2.png" alt="Initialize the tables" width="500"/>
 
-c. Navigate back to the Setup tab on bottom left.
+Then:
 
-<img src="docs/images/return-to-setup.png" alt="Return to setup" width="400"/>
+1. **Hard refresh** your browser: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows)
+2. Navigate back to the **Setup** tab (bottom-left sidebar)
 
-#### 5. Start the `Job Sentinel`
+<img src="docs/images/return-to-setup.png" alt="Return to setup" width="300"/>
+
+---
+
+#### Step 6: Start the Job Sentinel
+
+This background job processes the validation queue:
+
+```bash
+databricks bundle run job_sentinel --no-wait -t <your-target>
 ```
-databricks bundle run job_sentinel --no-wait -t <your target>
-```
 
-#### 6. Follow remaining instructions in app
+---
 
-As an overview, once you've completed the above steps, follow these steps to run your first validation:
+#### Step 7: Run Your First Validation
+
+You're all set! Here's an overview of next steps:
 
 1. **Create Systems** (Systems view)
    - Add your source database (e.g., Netezza production)
