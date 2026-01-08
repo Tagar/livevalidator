@@ -45,7 +45,7 @@ def get_workspace_client() -> WorkspaceClient:
     if _workspace_client is None or _client_created_at is None or \
        datetime.now(UTC) - _client_created_at > timedelta(hours=1):
         _workspace_client = WorkspaceClient(
-            host="https://dbc-d723fd35-120a.cloud.databricks.com",
+            host=spark.conf.get('spark.databricks.workspaceUrl'),
             client_id=dbutils.secrets.get(scope = "livevalidator", key = "lv-app-id"),
             client_secret=dbutils.secrets.get(scope = "livevalidator", key = "lv-app-secret")
             )
