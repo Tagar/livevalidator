@@ -68,14 +68,15 @@ When differences are found, LiveValidator captures sample records and provides d
 #### 1. Deploy DAB
 
 ```bash
-databricks bundle deploy -t migr-dev
+databricks bundle deploy -t <your-target>
 ```
+Note: this may take 10+ minutes as it spins up Databricks App, LakeBase, etc.
 
 #### 2. Start App
 
 ```bash
 # start the app's compute
-databricks apps start live-validator -t migr-dev
+databricks apps start live-validator -t <your-target>
 # deploy the app
 databricks apps deploy live-validator --source-code-path /Workspace/LiveValidator/files/src/app -t migr-dev
 ```
@@ -134,7 +135,12 @@ c. Navigate back to the Setup tab on bottom left.
 
 <img src="docs/images/return-to-setup.png" alt="Return to setup" width="400"/>
 
-#### 5. Follow remaining instructions in app
+#### 5. Start the `Job Sentinel`
+```
+databricks bundle run job_sentinel --no-wait -t <your target>
+```
+
+#### 6. Follow remaining instructions in app
 
 As an overview, once you've completed the above steps, follow these steps to run your first validation:
 
