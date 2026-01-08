@@ -1,4 +1,5 @@
-# LiveValidator
+# <img src="src/app/frontend/favicon.ico" alt="LiveValidator" width="32" height="32" style="vertical-align: middle;"/> LiveValidator
+Go link: `go/livevalidatorrepo`
 
 ## Overview
 
