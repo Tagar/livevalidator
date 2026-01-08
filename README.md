@@ -14,7 +14,7 @@ LiveValidator performs three-tier validation between any two database systems:
 
 When differences are found, LiveValidator captures sample records and provides detailed reports through a modern web interface.
 
-### Architecture
+### Arch Overview
 
 ![Architecture](docs/images/LiveValidator_arch_color.png)
 
@@ -27,8 +27,8 @@ When differences are found, LiveValidator captures sample records and provides d
 
 ### Key Capabilities
 
-- **Snappy LakeBase Backend**: Handle 
-- **Tagging**: Handle 
+- **Snappy LakeBase Backend**: Quickly iterate in the web UI with a polished, modern user experience.
+- **Tagging**: Organize your table and query comparisons with tags and use them to do bulk actions.
 - **Multi-Database Support**: Databricks, Netezza, Teradata, SQL Server, MySQL, Postgres, Snowflake, or custom JDBC sources
 - **Custom Type Transformations**: Handle data type differences with custom Python functions per system pair
 - **Primary Key Tracking**: Optionally configure primary key columns for proper row identification and tracking
@@ -109,7 +109,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA control
   GRANT USAGE, SELECT ON SEQUENCES TO apprunner;
 ```
 
-![Database Not Initialized Banner](docs/images/init-database-1.png)
+Run it in SQL Editor attached to your Postgres compute like so:
+
+![Init database in SQL Editor](docs/images/init-database-1.png)
 
 #### 4. Initialize Metadata Tables
 
@@ -176,7 +178,7 @@ User Action (Manual/Scheduled)
     ↓
 Create Trigger (status='queued')
     ↓
-Worker Claims Trigger (status='running')
+Job Sentinel Claims Trigger (status='running')
     ↓
 Launch Databricks Workflow
     ↓
@@ -193,30 +195,37 @@ Display in UI
 
 ```
 LiveValidator/
-├── backend/
-│   ├── app.py                      # FastAPI application & endpoints
-│   ├── db.py                       # PostgreSQL connection pool
-│   ├── models.py                   # Pydantic models
-│   ├── default_transformations.py  # Type mapping defaults
-│   └── sql/
-│       ├── ddl.sql                 # Database schema
-│       ├── grants.sql              # Permission grants
-│       └── migrate_*.sql           # Schema migrations
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx                 # Main application
-│   │   ├── components/             # Reusable UI components
-│   │   ├── views/                  # Page-level views
-│   │   ├── services/               # API client
-│   │   └── utils/                  # Helper functions
-│   └── dist/                       # Production build
+├── src/app/                        # Deployed to Databricks Apps
+│   ├── app.yaml                    # Databricks App configuration
+│   ├── backend/
+│   │   ├── app.py                  # FastAPI application & endpoints
+│   │   ├── db.py                   # PostgreSQL connection pool
+│   │   ├── models.py               # Pydantic models
+│   │   ├── default_transformations.py  # Type mapping defaults
+│   │   └── sql/
+│   │       ├── ddl.sql             # Database schema
+│   │       └── grants.sql          # Permission grants
+│   ├── frontend/
+│   │   ├── src/
+│   │   │   ├── App.jsx             # Main application
+│   │   │   ├── components/         # Reusable UI components
+│   │   │   ├── views/              # Page-level views
+│   │   │   ├── services/           # API client
+│   │   │   └── utils/              # Helper functions
+│   │   └── dist/                   # Production build (committed)
+│   └── resources/
+│       ├── run_validation.yml      # Databricks job definition
+│       └── job_sentinel.yml        # Worker job definition
 ├── jobs/
-│   ├── run_validation.py           # Databricks validation notebook
-│   └── job_sentinel.py             # Worker process
+│   ├── run_validation.py           # Spark validation logic
+│   └── job_sentinel.py             # Queue worker process
 ├── resources/
-│   ├── run_validation.yml          # Databricks job definition
-│   └── job_sentinel.yml            # Worker job definition
-└── .env                            # Environment config (local)
+│   ├── run_validation.yml          # Job config (DAB reference)
+│   └── job_sentinel.yml            # Worker config (DAB reference)
+├── docs/
+│   └── images/                     # Documentation images
+├── databricks.yml                  # Databricks Asset Bundle config
+└── README.md
 ```
 
 ## 🌍 Environment Variables
@@ -227,15 +236,6 @@ Create a `.env` file in the project root:
 DB_DSN=postgresql://postgres:postgres@localhost:5432/livevalidator
 DB_USE_SSL=false
 ```
-
-### Databricks Deployment (app.yaml)
-Configure in `app.yaml` under the `env` section or via Databricks UI:
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `DB_DSN` | PostgreSQL connection string | Databricks Lakebase | Yes |
-| `DB_USE_SSL` | Enable SSL for database | `true` | No |
-| `DB_SSL_CA_FILE` | Path to SSL CA certificate | `backend/databricks-ca.pem` | No |
 
 ## 📦 Features
 
