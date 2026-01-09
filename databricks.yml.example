@@ -56,53 +56,12 @@ resources:
       runtime_engine: PHOTON
 
 targets:
-
-  migr-dev:
-    mode: production
-    workspace:
-      host: https://dbc-7c9eb967-788d.cloud.databricks.com/
-      root_path: /Workspace/LiveValidator
-    permissions:
-      - level: CAN_MANAGE
-        group_name: 1dp-migration-dev-admin  
-      - level: CAN_RUN
-        group_name: users
-
-    resources:
-      clusters:
-        live_validator_cluster:
-          spark_conf:
-            spark.hadoop.datanucleus.autoCreateTables: 'true'
-            spark.hadoop.datanucleus.autoCreateSchema: 'true'
-            spark.hadoop.javax.jdo.option.ConnectionDriverName: org.apache.derby.jdbc.EmbeddedDriver
-            spark.sql.session.timeZone: America/Phoenix
-            spark.hadoop.javax.jdo.option.ConnectionPassword: hivepass
-            spark.hadoop.javax.jdo.option.ConnectionURL: jdbc:derby:memory:myInMemDB;create=true
-            spark.sql.catalogImplementation: hive
-            spark.hadoop.javax.jdo.option.ConnectionUserName: hiveuser
-            spark.hadoop.datanucleus.fixedDatastore: 'false'
-          permissions:
-            - group_name: users
-              level: CAN_ATTACH_TO
-            - group_name: 1dp-migration-dev-admin
-              level: CAN_MANAGE
-      database_catalogs:
-        live_validator_catalog:
-          name: live_validator_dev
-      apps:
-        live_validator:
-          name: live-validator-dev
-      jobs:
-        run_validation:
-          permissions:
-            - level: CAN_MANAGE
-              group_name: 1dp-migration-dev-admin
   
   migr-prod:
     default: true
     mode: production
     workspace:
-      host: https://dbc-d723fd35-120a.cloud.databricks.com/
+      host: https://your-deployment-workspace.cloud.databricks.com/
       root_path: /Workspace/LiveValidator
     permissions:
       - level: CAN_MANAGE
@@ -114,15 +73,7 @@ targets:
       clusters:
         live_validator_cluster:
           spark_conf:
-            spark.hadoop.datanucleus.autoCreateTables: 'true'
-            spark.hadoop.datanucleus.autoCreateSchema: 'true'
-            spark.hadoop.javax.jdo.option.ConnectionDriverName: org.apache.derby.jdbc.EmbeddedDriver
-            spark.sql.session.timeZone: America/Phoenix
-            spark.hadoop.javax.jdo.option.ConnectionPassword: hivepass
-            spark.hadoop.javax.jdo.option.ConnectionURL: jdbc:derby:memory:myInMemDB;create=true
-            spark.sql.catalogImplementation: hive
-            spark.hadoop.javax.jdo.option.ConnectionUserName: hiveuser
-            spark.hadoop.datanucleus.fixedDatastore: 'false'
+            spark.your.additiona.config: 'true'
           permissions:
             - group_name: users
               level: CAN_ATTACH_TO
@@ -133,5 +84,3 @@ targets:
           permissions:
             - level: CAN_MANAGE
               group_name: 1dp-migration-prd-admin
-            - level: CAN_MANAGE_RUN
-              service_principal_name: f1011635-4c0f-4939-b262-b25676999ed3
