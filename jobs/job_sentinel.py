@@ -22,10 +22,10 @@ import traceback
 dbutils.widgets.text("backend_api_url", "")
 backend_api_url: str = dbutils.widgets.get("backend_api_url")
 
-dbutils.widgets.text("validation_job_id", "")
+dbutils.widgets.text("poll_interval", "30")
 poll_interval: int = int(dbutils.widgets.get("poll_interval") or "30")
 
-dbutils.widgets.text("poll_interval", "30")
+dbutils.widgets.text("validation_job_id", "")
 validation_job_id: str = dbutils.widgets.get("validation_job_id")
 
 print(f"JobSentinel starting...")
@@ -91,10 +91,13 @@ def check_and_create_scheduled_triggers() -> int:
 
             # Initialize next_run_at if missing
             if not next_run_at:
-                # we pass `now` to  give the tz info to croniter
-                cron: croniter = croniter(schedule["cron_expr"], now)
-                print(cron.get_next(datetime))
-                update_schedule(schedule["id"], schedule["version"], next_run_at=cron.get_next(datetime).isoformat())
+                try:
+                    cron: croniter = croniter(schedule["cron_expr"], now)
+                    next_run: datetime = cron.get_next(datetime)
+                    print(f"Initializing schedule '{schedule['name']}': next run at {next_run.isoformat()}")
+                    update_schedule(schedule["id"], schedule["version"], next_run_at=next_run.isoformat())
+                except Exception as e:
+                    print(f"[WARN] Invalid cron expression for schedule '{schedule['name']}': {schedule['cron_expr']} - {e}")
                 continue
 
             # Parse next_run_at (comes from DB as UTC timestamp)
@@ -135,10 +138,13 @@ def check_and_create_scheduled_triggers() -> int:
                 # Note: Duplicates (already queued/running) are silently skipped by the backend
 
             # Update schedule after processing (even if no bindings)
-            cron = croniter(schedule["cron_expr"], now)
-            next_run: datetime = cron.get_next(datetime)
-            update_schedule(schedule["id"], schedule["version"], last_run_at=now.isoformat(), next_run_at=next_run.isoformat())
-            print(f"Updated schedule: next run at {next_run.isoformat()}")
+            try:
+                cron = croniter(schedule["cron_expr"], now)
+                next_run_dt: datetime = cron.get_next(datetime)
+                update_schedule(schedule["id"], schedule["version"], last_run_at=now.isoformat(), next_run_at=next_run_dt.isoformat())
+                print(f"Updated schedule: next run at {next_run_dt.isoformat()}")
+            except Exception as e:
+                print(f"[WARN] Failed to calculate next run for schedule '{schedule['name']}': {e}")
 
     except Exception:
         print(f"[ERROR] Schedule check failed: {traceback.format_exc()}")
@@ -211,7 +217,7 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             "source_table": trigger.get("source_table", "") if is_table else "",
             "target_table": trigger.get("target_table", "") if is_table else "",
             "sql": trigger.get("sql", "") if not is_table else "",
-            "watermark_expr": trigger.get("watermark_expr", ""),
+            "watermark_expr": trigger.get("watermark_expr", "") or "",
             "compare_mode": trigger.get("compare_mode", "except_all"),
             "pk_columns": json.dumps(trigger.get("pk_columns") or []),
             "include_columns": json.dumps(trigger.get("include_columns") or []),

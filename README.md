@@ -1,5 +1,4 @@
 # <img src="src/app/frontend/favicon.ico" alt="LiveValidator" width="32" height="32" style="vertical-align: middle;"/> LiveValidator
-Go link: `go/livevalidatorrepo`
 
 ## Table of Contents
 
@@ -31,6 +30,7 @@ Go link: `go/livevalidatorrepo`
 - [Development](#️-development)
 - [Contributing](#-contributing)
 - [License](#-license)
+- [Updating](#-updating)
 - [Troubleshooting](#-troubleshooting)
 
 ---
@@ -81,16 +81,33 @@ When differences are found, LiveValidator captures sample records and provides d
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Setup Databricks CLI to point to your target workspace
+- Clone this repository: `git clone https://github.com/databricks-field-eng/livevalidator`
+- Databricks CLI installed and configured
 - Lakehouse Apps enabled on your workspace
 - Lakebase enabled on your workspace
-- Elevated/admin priveleges for the deployer
+- Elevated/admin privileges for the deployer
 
 ### Setup
 
 ---
 
-#### Step 1: Deploy DAB
+#### Step 1: Configure Your Environment
+
+```bash
+# Copy the example config
+cp databricks.yml.example databricks.yml
+```
+
+Edit `databricks.yml` with your settings:
+- **Workspace host URL** - your Databricks workspace (e.g., `https://my-workspace.cloud.databricks.com/`)
+- **Admin group name** - group that will have CAN_MANAGE permissions
+- **Target name** - environment name (e.g., `dev`, `prod`)
+
+> **Note:** `databricks.yml` is gitignored - your config stays local and won't conflict with updates.
+
+---
+
+#### Step 2: Deploy DAB
 
 ```bash
 databricks bundle deploy -t <your-target>
@@ -100,7 +117,7 @@ databricks bundle deploy -t <your-target>
 
 ---
 
-#### Step 2: Start App
+#### Step 3: Start App
 
 ```bash
 # start the app's compute
@@ -114,7 +131,7 @@ Or simply navigate to **Compute → Apps** and start it from the UI.
 
 ---
 
-#### Step 3: Navigate to the App
+#### Step 4: Navigate to the App
 
 Inspect the app configuration page under **Compute → Apps**:
 
@@ -130,7 +147,7 @@ On first launch, you'll see a banner prompting you to go to the Setup page.
 
 ---
 
-#### Step 4: Setup Database
+#### Step 5: Setup Database
 
 > **Important:** Must be run by the LakeBase owner (whoever deployed the DAB).
 
@@ -159,7 +176,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA control
 
 ---
 
-#### Step 5: Initialize Metadata Tables
+#### Step 6: Initialize Metadata Tables
 
 Click the button to initialize the tables:
 
@@ -174,7 +191,7 @@ Then:
 
 ---
 
-#### Step 6: Start the Job Sentinel
+#### Step 7: Start the Job Sentinel
 
 This background job processes the validation queue:
 
@@ -184,7 +201,7 @@ databricks bundle run job_sentinel --no-wait -t <your-target>
 
 ---
 
-#### Step 7: Run Your First Validation
+#### Step 8: Run Your First Validation
 
 You're all set! Here's an overview of next steps:
 
@@ -278,7 +295,7 @@ LiveValidator/
 │   └── job_sentinel.yml            # Worker config (DAB reference)
 ├── docs/
 │   └── images/                     # Documentation images
-├── databricks.yml                  # Databricks Asset Bundle config
+├── databricks.yml.example          # Bundle config template (copy to databricks.yml)
 └── README.md
 ```
 
@@ -494,6 +511,17 @@ See [CONTRIBUTING.md](contributing.md) for guidelines.
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details
+
+## 🔄 Updating
+
+To pull the latest updates:
+
+```bash
+git pull origin main
+databricks bundle deploy -t <your-target>
+```
+
+Your `databricks.yml` is gitignored, so there won't be merge conflicts with your local configuration.
 
 ## 🐛 Troubleshooting
 

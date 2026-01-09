@@ -560,11 +560,16 @@ if compare_mode != "primary_key" or result["rows_different"] == 0 or not result.
 
 # COMMAND ----------
 
-sample_pks: DataFrame = spark.createDataFrame(
-    {k: v} 
-    for row in serde_result.get('sample_differences') 
-    for k, v in row.items() if k in pk_columns
- )
+pk_schema = src_df.select(*pk_columns).schema
+pk_names  = [f.name for f in pk_schema.fields]
+
+sample_pks = (
+  spark.createDataFrame(
+    ({k: v for k, v in row.items() if k in pk_columns}
+     for row in (serde_result.get("sample_differences") or []))
+  )
+  .selectExpr(*[f"cast(`{f.name}` as {f.dataType.simpleString()}) as `{f.name}`" for f in pk_schema.fields])
+)
 
 src_sample = [row.asDict() for row in src_df.join(sample_pks, pk_columns).collect()]
 tgt_sample = [row.asDict() for row in tgt_df.join(sample_pks, pk_columns).collect()]
