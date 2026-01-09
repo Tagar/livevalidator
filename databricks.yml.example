@@ -7,10 +7,6 @@ include:
 workspace:
   root_path: /Workspace/LiveValidator
 
-permissions:
-  - user_name: dan.zafar@nxp.com
-    level: CAN_MANAGE
-
 resources:
   apps:
     live_validator:
@@ -56,6 +52,10 @@ resources:
       runtime_engine: PHOTON
 
 targets:
+
+  permissions:
+  - user_name: <deployer_email>@nxp.com
+    level: CAN_MANAGE
   
   migr-prod:
     default: true
