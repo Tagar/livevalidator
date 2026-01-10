@@ -1,11 +1,17 @@
 import os
 import ssl
 import asyncpg
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env file (for local development)
 # On Databricks, environment variables are set via app.yaml
-load_dotenv()
+# Look for .env in src/app/ (1 level up from backend/)
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file)
+else:
+    load_dotenv()  # Fallback to default behavior
 
 # Database connection configuration
 # Local: Set in .env file
