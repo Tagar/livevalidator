@@ -181,9 +181,11 @@ class SystemIn(BaseModel):
     host: Optional[str] = None
     port: Optional[int] = None
     database: Optional[str] = None
+    secret_scope: Optional[str] = 'livevalidator'
     user_secret_key: Optional[str] = None
     pass_secret_key: Optional[str] = None
     jdbc_string: Optional[str] = None
+    driver_connector: Optional[str] = None
     concurrency: int = -1
     max_rows: Optional[int] = None
     options: dict = Field(default_factory=dict)
@@ -197,9 +199,11 @@ class SystemUpdate(BaseModel):
     host: Optional[str] = None
     port: Optional[int] = None
     database: Optional[str] = None
+    secret_scope: Optional[str] = None
     user_secret_key: Optional[str] = None
     pass_secret_key: Optional[str] = None
     jdbc_string: Optional[str] = None
+    driver_connector: Optional[str] = None
     concurrency: Optional[int] = None
     max_rows: Optional[int] = None
     options: Optional[dict] = None

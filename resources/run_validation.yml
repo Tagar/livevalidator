@@ -12,9 +12,6 @@ resources:
           timeout_seconds: 3600
           disable_auto_optimization: true
           existing_cluster_id: ${resources.clusters.live_validator_cluster.id}
-          libraries:
-            - maven:
-                coordinates: com.teradata.jdbc:terajdbc:20.00.00.51
       
       max_concurrent_runs: 500
       parameters:

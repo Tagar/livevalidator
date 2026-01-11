@@ -7,9 +7,11 @@ CREATE TABLE IF NOT EXISTS control.systems (
   host              TEXT,
   port              INTEGER,
   database          TEXT,
+  secret_scope      TEXT DEFAULT 'livevalidator',
   user_secret_key   TEXT,
   pass_secret_key   TEXT,
   jdbc_string       TEXT,
+  driver_connector  TEXT,                          -- Custom JDBC driver class or Spark connector
   concurrency       INTEGER NOT NULL DEFAULT -1,
   max_rows          INTEGER DEFAULT NULL,              -- Max rows to pull during validation (NULL = unlimited)
   options           JSONB NOT NULL DEFAULT '{}'::jsonb,

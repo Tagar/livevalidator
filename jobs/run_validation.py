@@ -106,16 +106,21 @@ def get_connection_info(system_name: str) -> dict:
     else:
         match system["kind"]:
             case "Teradata":
-               jdbc_str = f"jdbc:{system['kind'].lower()}://{system['host']}"
+                jdbc_str = f"jdbc:teradata://{system['host']}"
+            case "Oracle":
+                jdbc_str = f"jdbc:oracle:thin:@//{system['host']}:{system['port']}/{system['database']}"
+            case "SQLServer":
+                jdbc_str = f"jdbc:sqlserver://{system['host']}:{system['port']};databaseName={system['database']};encrypt=true;trustServerCertificate=true"
             case _:
-               jdbc_str = f"jdbc:{system['kind'].lower()}://{system['host']}:{system['port']};database={system['database']}"
-        print(f"Generated {system["kind"]} connection string: {jdbc_str}")
+                jdbc_str = f"jdbc:{system['kind'].lower()}://{system['host']}:{system['port']}/{system['database']}"
+        print(f"Generated {system['kind']} JDBC string: {jdbc_str}")
 
+    scope = system.get("secret_scope") or "livevalidator"
     return {
         "type": "jdbc",
         "jdbc_string": jdbc_str,
-        "username": dbutils.secrets.get("livevalidator", system["user_secret_key"]) if system.get("user_secret_key") else None,
-        "password": dbutils.secrets.get("livevalidator", system["pass_secret_key"]) if system.get("pass_secret_key") else None,
+        "username": dbutils.secrets.get(scope, system["user_secret_key"]) if system.get("user_secret_key") else None,
+        "password": dbutils.secrets.get(scope, system["pass_secret_key"]) if system.get("pass_secret_key") else None,
         "system": system
     }    
 
@@ -131,29 +136,13 @@ def get_type_transformations(source_system_id: int, target_system_id: int) -> tu
     return source_func, target_func
 
 def query_jdbc(conn_info: dict, query: str) -> DataFrame:    
-    system_kind = conn_info["system"]["kind"]
-    
-    driver_map = {
-        "Netezza": "org.netezza.Driver",
-        "Teradata": "com.teradata.jdbc.TeraDriver",
-        "SQLServer": "com.microsoft.sqlserver.jdbc.SQLServerDriver",
-        "MySQL": "com.mysql.cj.jdbc.Driver",
-        "Postgres": "org.postgresql.Driver",
-        "Snowflake": "net.snowflake.client.jdbc.SnowflakeDriver"
-    }
-    
-    driver = driver_map.get(system_kind)
+    driver = conn_info["system"].get("driver_connector")
     if not driver:
-        raise ValueError(f"No JDBC driver configured for system type: {system_kind}")
+        raise ValueError(f"JDBC driver not set for system: {conn_info['system']['name']}")
     
-    return spark.read \
-        .format("jdbc") \
-        .option("url", conn_info["jdbc_string"]) \
-        .option("driver", driver) \
-        .option("query", query) \
-        .option("user", conn_info.get("username")) \
-        .option("password", conn_info.get("password")) \
-        .load()
+    return spark.read.format("jdbc") \
+        .option("url", conn_info["jdbc_string"]).option("driver", driver).option("query", query) \
+        .option("user", conn_info.get("username")).option("password", conn_info.get("password")).load()
 
 def get_column_types(conn: dict, table: str | None = None) -> list[tuple[str, str]]:
 
@@ -174,12 +163,15 @@ def get_column_types(conn: dict, table: str | None = None) -> list[tuple[str, st
             query_columns = f"""
             HELP COLUMN {schema.upper()}.{tbl.upper()}.*
             """
+        case "Oracle":
+            query_columns = f"""
+            SELECT column_name, data_type FROM all_tab_columns
+            WHERE table_name = '{tbl.upper()}' AND owner = '{schema.upper()}'
+            """
         case "Netezza" | "SQLServer" | "MySQL" | "Postgres" | "Snowflake":
             query_columns = f"""
-            SELECT column_name, data_type
-            FROM information_schema.columns
-            WHERE UPPER(table_name) = '{tbl.upper()}' 
-            AND UPPER(table_schema) = '{schema.upper()}'
+            SELECT column_name, data_type FROM information_schema.columns
+            WHERE UPPER(table_name) = '{tbl.upper()}' AND UPPER(table_schema) = '{schema.upper()}'
             """
             if catalog:
                 query_columns += f" AND UPPER(TABLE_CATALOG) = '{catalog.upper()}'"
@@ -232,10 +224,12 @@ def read_data(
     watermark_expr = f" WHERE {watermark_expr}" if watermark_expr else ""
     read_query = generate_read_query(conn, table, type_mapping_func) if type_mapping_func.strip() else f"SELECT * FROM {table}{watermark_expr}"
     
-    if is_databricks:
-        return spark.sql(read_query) 
+    if conn["type"] == "jdbc":
+        return query_jdbc(conn, read_query)
     
-    return query_jdbc(conn, read_query)
+    return spark.sql(read_query) 
+    
+    
 
 def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
     """Compare column names"""

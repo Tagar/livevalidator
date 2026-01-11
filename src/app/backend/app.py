@@ -1839,20 +1839,22 @@ async def create_system(body: SystemIn):
     
     row = await fetchrow("""
         INSERT INTO control.systems (
-          name, kind, catalog, host, port, database, user_secret_key, pass_secret_key, jdbc_string,
+          name, kind, catalog, host, port, database, secret_scope, user_secret_key, pass_secret_key, jdbc_string, driver_connector,
           concurrency, max_rows, options, is_active, created_by, updated_by
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9, $10,$11,$12,$13,$14,$14
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, $12,$13,$14,$15,$16,$16
         ) RETURNING *
     """,
     body.name, body.kind, 
     body.catalog.strip() if body.catalog else None, 
     body.host.strip() if body.host else None, 
     body.port, 
-    body.database.strip() if body.database else None, 
+    body.database.strip() if body.database else None,
+    body.secret_scope.strip() if body.secret_scope else 'livevalidator',
     body.user_secret_key.strip() if body.user_secret_key else None, 
     body.pass_secret_key.strip() if body.pass_secret_key else None, 
-    body.jdbc_string.strip() if body.jdbc_string else None, 
+    body.jdbc_string.strip() if body.jdbc_string else None,
+    body.driver_connector.strip() if body.driver_connector else None,
     body.concurrency,
     body.max_rows,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email)
@@ -1879,21 +1881,23 @@ async def update_system(id: int, body: SystemUpdate):
           host = COALESCE($5, host),
           port = COALESCE($6, port),
           database = COALESCE($7, database),
-          user_secret_key = COALESCE($8, user_secret_key),
-          pass_secret_key = COALESCE($9, pass_secret_key),
-          jdbc_string = COALESCE($10, jdbc_string),
-          concurrency = COALESCE($11, concurrency),
-          max_rows = COALESCE($12, max_rows),
-          options = COALESCE($13, options),
-          is_active = COALESCE($14, is_active),
-          updated_by = $15,
+          secret_scope = COALESCE($8, secret_scope),
+          user_secret_key = COALESCE($9, user_secret_key),
+          pass_secret_key = COALESCE($10, pass_secret_key),
+          jdbc_string = COALESCE($11, jdbc_string),
+          driver_connector = COALESCE($12, driver_connector),
+          concurrency = COALESCE($13, concurrency),
+          max_rows = COALESCE($14, max_rows),
+          options = COALESCE($15, options),
+          is_active = COALESCE($16, is_active),
+          updated_by = $17,
           updated_at = now(),
           version = version + 1
-        WHERE id=$1 AND version=$16
+        WHERE id=$1 AND version=$18
         RETURNING *
     """,
-    id, body.name, body.kind, body.catalog, body.host, body.port, body.database, 
-    body.user_secret_key, body.pass_secret_key, body.jdbc_string, body.concurrency,
+    id, body.name, body.kind, body.catalog, body.host, body.port, body.database,
+    body.secret_scope, body.user_secret_key, body.pass_secret_key, body.jdbc_string, body.driver_connector, body.concurrency,
     body.max_rows,
     json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email, body.version)
     if not row:

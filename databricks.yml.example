@@ -81,6 +81,14 @@ targets:
               level: CAN_MANAGE
       jobs:
         run_validation:
+          tasks:
+            - task_key: validate
+            # add all libraries to UC allowlist
+              libraries:
+                - maven:
+                    coordinates: com.teradata.jdbc:terajdbc:20.00.00.51
+                - maven:
+                    coordinates: com.oracle.database.jdbc:ojdbc11:23.5.0.24.07
           permissions:
             - level: CAN_MANAGE
               group_name: 1dp-migration-prd-admin

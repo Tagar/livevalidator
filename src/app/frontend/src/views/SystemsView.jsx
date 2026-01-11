@@ -29,7 +29,8 @@ export function SystemsView({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {data.map(row => {
             const isDatabricks = row.kind === 'Databricks';
-            const showDatabase = ['Postgres', 'SQLServer', 'MySQL', 'Netezza'].includes(row.kind);
+            const isOracle = row.kind === 'Oracle';
+            const showDatabase = ['Postgres', 'SQLServer', 'MySQL', 'Netezza', 'Oracle'].includes(row.kind);
             return (
               <div key={row.id} className="bg-charcoal-500 border border-charcoal-200 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-rust-light mb-2">{row.name}</h3>
@@ -43,7 +44,7 @@ export function SystemsView({
                   <>
                     {row.host && <p className="text-gray-400 text-sm mb-1"><strong>Host:</strong> {row.host}</p>}
                     {row.port && <p className="text-gray-400 text-sm mb-1"><strong>Port:</strong> {row.port}</p>}
-                    {showDatabase && row.database && <p className="text-gray-400 text-sm mb-1"><strong>Database:</strong> {row.database}</p>}
+                    {showDatabase && row.database && <p className="text-gray-400 text-sm mb-1"><strong>{isOracle ? 'Service Name' : 'Database'}:</strong> {row.database}</p>}
                     {row.user_secret_key && <p className="text-gray-400 text-sm mb-1"><strong>User Secret:</strong> {row.user_secret_key}</p>}
                     {row.jdbc_string && <p className="text-gray-400 text-sm mb-1 font-mono text-xs break-all"><strong>JDBC:</strong> {row.jdbc_string.substring(0, 50)}...</p>}
                     <p className="text-gray-400 text-sm mb-1">

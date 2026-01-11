@@ -9,6 +9,50 @@ const getDefaultMaxRows = (kind) => {
   return ['Databricks', 'Snowflake'].includes(kind) ? null : 1000000;
 };
 
+// Helper to determine default port based on system kind
+const getDefaultPort = (kind) => {
+  switch (kind) {
+    case 'Oracle': return 1521;
+    case 'Postgres': return 5432;
+    case 'MySQL': return 3306;
+    case 'SQLServer': return 1433;
+    case 'Netezza': return 5480;
+    case 'Teradata': return 443;
+    default: return 443;
+  }
+};
+
+// Default JDBC driver classes by system type
+const getDefaultDriver = (kind) => {
+  switch (kind) {
+    case 'Oracle': return 'oracle.jdbc.OracleDriver';
+    case 'Postgres': return 'org.postgresql.Driver';
+    case 'MySQL': return 'com.mysql.cj.jdbc.Driver';
+    case 'SQLServer': return 'com.microsoft.sqlserver.jdbc.SQLServerDriver';
+    case 'Netezza': return 'org.netezza.Driver';
+    case 'Teradata': return 'com.teradata.jdbc.TeraDriver';
+    default: return '';
+  }
+};
+
+// Generate JDBC preview string based on system type
+const getJdbcPreview = (kind, host, port, database) => {
+  const h = host || '<host>';
+  const p = port || '<port>';
+  const d = database || '<database>';
+  
+  switch (kind) {
+    case 'Oracle':
+      return `jdbc:oracle:thin:@//${h}:${p}/${d}`;
+    case 'SQLServer':
+      return `jdbc:sqlserver://${h}:${p};databaseName=${d};encrypt=true;trustServerCertificate=true`;
+    case 'Teradata':
+      return `jdbc:teradata://${h}`;
+    default:
+      return `jdbc:${kind.toLowerCase()}://${h}:${p}/${d}`;
+  }
+};
+
 export function SystemModal({ system, onSave, onClose }) {
   const [form, setForm] = useState(() => {
     const initialKind = system?.kind || "Databricks";
@@ -17,11 +61,13 @@ export function SystemModal({ system, onSave, onClose }) {
       kind: initialKind,
       catalog: system?.catalog || "",
       host: system?.host || "",
-      port: system?.port || 443,
+      port: system?.port ?? getDefaultPort(initialKind),
       database: system?.database || "",
+      secret_scope: system?.secret_scope || "livevalidator",
       user_secret_key: system?.user_secret_key || "",
       pass_secret_key: system?.pass_secret_key || "",
       jdbc_string: system?.jdbc_string || "",
+      driver_connector: system?.driver_connector || getDefaultDriver(initialKind),
       concurrency: system?.concurrency ?? -1,
       max_rows: system?.max_rows !== undefined ? system.max_rows : getDefaultMaxRows(initialKind),
       version: system?.version || 0
@@ -47,7 +93,13 @@ export function SystemModal({ system, onSave, onClose }) {
   };
   
   const isDatabricks = form.kind === 'Databricks';
-  const showDatabase = ['Postgres', 'SQLServer', 'MySQL', 'Netezza'].includes(form.kind);
+  const isOracle = form.kind === 'Oracle';
+  const isOther = form.kind === 'other';
+  const isNetezza = form.kind === 'Netezza';
+  const needsManualDriver = isNetezza || isOther;
+  const driverNotInDBR = ['Netezza', 'Teradata', 'Oracle'].includes(form.kind);
+  const showDatabase = ['Postgres', 'SQLServer', 'MySQL', 'Netezza', 'Oracle'].includes(form.kind);
+  const showHostPort = !isDatabricks && !isOther;
   
   return (
     <div ref={backdropRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} className="fixed inset-0 bg-black/75 flex items-center justify-center z-50">
@@ -70,12 +122,18 @@ export function SystemModal({ system, onSave, onClose }) {
               setForm({
                 ...form, 
                 kind: newKind,
-                // Update max_rows default when changing kind (only if not editing existing system with explicit value)
-                max_rows: system?.max_rows !== undefined ? form.max_rows : getDefaultMaxRows(newKind)
+                port: system?.port !== undefined ? form.port : getDefaultPort(newKind),
+                max_rows: system?.max_rows !== undefined ? form.max_rows : getDefaultMaxRows(newKind),
+                driver_connector: system?.driver_connector ? form.driver_connector : getDefaultDriver(newKind)
               });
             }} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500">
-              {SYSTEM_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+              {SYSTEM_KINDS.map(k => <option key={k} value={k}>{k === 'other' ? 'Other JDBC' : k}</option>)}
             </select>
+            {needsManualDriver && (
+              <div className="mt-2 px-3 py-2 bg-gradient-to-r from-amber-950/40 to-transparent border-l-2 border-amber-500 rounded-r text-xs text-amber-100/90">
+                <span className="font-semibold text-amber-300">Driver Required</span> — {isNetezza ? 'Netezza' : 'This system type'} requires a JDBC driver JAR to be installed on the validation job's compute cluster.
+              </div>
+            )}
           </div>
           
           {/* Databricks: Only show catalog */}
@@ -89,38 +147,73 @@ export function SystemModal({ system, onSave, onClose }) {
           {/* Non-Databricks: Show connection fields */}
           {!isDatabricks && (
             <>
+              {/* "other" type: JDBC String is required and shown first */}
+              {isOther && (
+                <div className="mb-3">
+                  <label className="block mb-1 font-medium text-gray-400 text-sm">JDBC String</label>
+                  <textarea value={form.jdbc_string} onChange={e=>setForm({...form, jdbc_string:e.target.value})} rows={3} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="jdbc:snowflake://account.snowflakecomputing.com/?db=mydb&warehouse=compute_wh" />
+                  <p className="text-xs text-gray-500 mt-1">Full JDBC connection string (required)</p>
+                </div>
+              )}
+              
+              {/* Standard types: show host/port/database */}
+              {showHostPort && (
+                <>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="block mb-1 font-medium text-gray-400 text-sm">Host</label>
+                      <input value={form.host} onChange={e=>setForm({...form, host:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                    </div>
+                    <div>
+                      <label className="block mb-1 font-medium text-gray-400 text-sm">Port</label>
+                      <input type="number" value={form.port} onChange={e=>setForm({...form, port:+e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                    </div>
+                  </div>
+                  
+                  {/* Database / Service Name - Only for specific kinds */}
+                  {showDatabase && (
+                    <div className="mb-3">
+                      <label className="block mb-1 font-medium text-gray-400 text-sm">{isOracle ? 'Service Name' : 'Database'}</label>
+                      <input value={form.database} onChange={e=>setForm({...form, database:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder={isOracle ? 'e.g., ORCL' : ''} />
+                    </div>
+                  )}
+                </>
+              )}
+              
+              <div className="mb-3">
+                <label className="block mb-1 font-medium text-gray-400 text-sm">Secret Scope</label>
+                <input value={form.secret_scope} onChange={e=>setForm({...form, secret_scope:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="livevalidator" />
+                <p className="text-xs text-gray-500 mt-1">Databricks secret scope name (default: livevalidator)</p>
+              </div>
+              
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
-                  <label className="block mb-1 font-medium text-gray-400 text-sm">Host</label>
-                  <input value={form.host} onChange={e=>setForm({...form, host:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                  <label className="block mb-1 font-medium text-gray-400 text-sm">User Secret Key</label>
+                  <input value={form.user_secret_key} onChange={e=>setForm({...form, user_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="username-key" />
                 </div>
                 <div>
-                  <label className="block mb-1 font-medium text-gray-400 text-sm">Port</label>
-                  <input type="number" value={form.port} onChange={e=>setForm({...form, port:+e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                  <label className="block mb-1 font-medium text-gray-400 text-sm">Pass Secret Key</label>
+                  <input value={form.pass_secret_key} onChange={e=>setForm({...form, pass_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="password-key" />
                 </div>
               </div>
               
-              {/* Database - Only for specific kinds */}
-              {showDatabase && (
+              {/* Standard types: optional JDBC override */}
+              {!isOther && (
                 <div className="mb-3">
-                  <label className="block mb-1 font-medium text-gray-400 text-sm">Database</label>
-                  <input value={form.database} onChange={e=>setForm({...form, database:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                  <label className="block mb-1 font-medium text-gray-400 text-sm">JDBC String (Optional)</label>
+                  <textarea value={form.jdbc_string} onChange={e=>setForm({...form, jdbc_string:e.target.value})} rows={2} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder={getJdbcPreview(form.kind, form.host, form.port, form.database)} />
+                  <p className="text-xs text-gray-500 mt-1">Leave empty to auto-generate from fields above</p>
                 </div>
               )}
               
               <div className="mb-3">
-                <label className="block mb-1 font-medium text-gray-400 text-sm">User Secret Key</label>
-                <input value={form.user_secret_key} onChange={e=>setForm({...form, user_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Databricks secret scope/key" />
-              </div>
-              
-              <div className="mb-3">
-                <label className="block mb-1 font-medium text-gray-400 text-sm">Pass Secret Key</label>
-                <input value={form.pass_secret_key} onChange={e=>setForm({...form, pass_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Databricks secret scope/key" />
-              </div>
-              
-              <div className="mb-3">
-                <label className="block mb-1 font-medium text-gray-400 text-sm">JDBC String (Optional)</label>
-                <textarea value={form.jdbc_string} onChange={e=>setForm({...form, jdbc_string:e.target.value})} rows={3} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="Full JDBC connection string if needed" />
+                <label className="block mb-1 font-medium text-gray-400 text-sm">Driver</label>
+                <input value={form.driver_connector} onChange={e=>setForm({...form, driver_connector:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="e.g., net.snowflake.client.jdbc.SnowflakeDriver" />
+                {driverNotInDBR && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Driver not included in Databricks Runtime. Add as a library dep in run_validation job or compute using <code className="text-gray-400">databricks.yml</code> and whitelist in <a href="https://docs.databricks.com/aws/en/data-governance/unity-catalog/manage-privileges/allowlist" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline">Unity Catalog allowlist</a>.
+                  </p>
+                )}
               </div>
               
               <div className="mb-3">
