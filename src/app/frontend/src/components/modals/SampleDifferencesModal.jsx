@@ -7,7 +7,17 @@ import React from 'react';
 export function SampleDifferencesModal({ validation, onClose }) {
   if (!validation) return null;
 
-  const samples = validation.sample_differences;
+  // Parse sample_differences if it's a JSON string (from PostgreSQL JSONB)
+  let samples = validation.sample_differences;
+  if (typeof samples === 'string') {
+    try {
+      samples = JSON.parse(samples);
+    } catch (e) {
+      console.error('Failed to parse sample_differences:', e);
+      samples = null;
+    }
+  }
+  
   const isPKMode = samples?.mode === 'primary_key';
   const isExceptAllMode = Array.isArray(samples);
 

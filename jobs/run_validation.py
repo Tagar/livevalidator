@@ -555,6 +555,43 @@ if serde_result.get('src_df'):
     src_df = serde_result.pop('src_df')
     tgt_df = serde_result.pop('tgt_df')
     sample_df = serde_result.pop('sample_df')
+
+# Format PK mode samples BEFORE API call
+if compare_mode == "primary_key" and result.get("rows_different", 0) > 0 and result.get('sample_differences'):
+    src_sample = [r.asDict() for r in null_safe_join(src_df, sample_df, pk_columns).collect()]
+    tgt_sample = [r.asDict() for r in null_safe_join(tgt_df, sample_df, pk_columns).collect()]
+    
+    if len(src_sample) == len(tgt_sample):
+        # Create properly formatted PK samples for the API
+        formatted_pk_samples = []
+        zipped_samples = zip(
+            sorted(src_sample, key=lambda item: [item[pk] for pk in pk_columns]),
+            sorted(tgt_sample, key=lambda item: [item[pk] for pk in pk_columns])
+        )
+        
+        for src, tgt in zipped_samples:
+            pk_values = {pk: src[pk] for pk in pk_columns}
+            differences = []
+            for k in src.keys():
+                if k not in pk_columns and src[k] != tgt[k]:
+                    differences.append({
+                        "column": k,
+                        "source_value": serialize_value(src[k]),
+                        "target_value": serialize_value(tgt[k])
+                    })
+            if differences:
+                formatted_pk_samples.append({
+                    "pk": pk_values,
+                    "differences": differences
+                })
+        
+        # Replace raw sample_differences with formatted PK structure
+        serde_result["sample_differences"] = {
+            "mode": "primary_key",
+            "pk_columns": pk_columns,
+            "samples": formatted_pk_samples
+        }
+
 api_call("POST", "/api/validation-history", serde_result)
 
 # COMMAND ----------
@@ -609,64 +646,3 @@ mismatch_df: DataFrame = spark.createDataFrame(mismatch_samples).display()
 
 # also print the plain text representation for whitespace debugging
 print(mismatch_samples)
-
-# COMMAND ----------
-
-# Format mismatch samples for API/UI consumption
-def format_pk_mismatches(src_samples: list[dict], tgt_samples: list[dict], pk_cols: list[str]) -> dict:
-    """
-    Convert side-by-side sample data into structured format for frontend display.
-    
-    Returns:
-        {
-            "mode": "primary_key",
-            "pk_columns": ["id", "date"],
-            "samples": [
-                {
-                    "pk": {"id": 123, "date": "2026-01-03"},
-                    "differences": [
-                        {"column": "amount", "source_value": "100.50", "target_value": "100.51"},
-                        ...
-                    ]
-                },
-                ...
-            ]
-        }
-    """
-    formatted_samples = []
-    
-    for src, tgt in zip(src_samples, tgt_samples):
-        # Extract PK values
-        pk_values = {pk: src[pk] for pk in pk_cols}
-        
-        # Find differing columns
-        differences = []
-        for col in src.keys():
-            if col not in pk_cols and src.get(col) != tgt.get(col):
-                differences.append({
-                    "column": col,
-                    "source_value": serialize_value(src.get(col)),
-                    "target_value": serialize_value(tgt.get(col))
-                })
-        
-        if differences:  # Only include if there are actual differences
-            formatted_samples.append({
-                "pk": pk_values,
-                "differences": differences
-            })
-    
-    return {
-        "mode": "primary_key",
-        "pk_columns": pk_cols,
-        "samples": formatted_samples
-    }
-
-formatted_sample_differences = format_pk_mismatches(src_sample, tgt_sample, pk_columns)
-print(f"Formatted {len(formatted_sample_differences['samples'])} PK mismatch samples for API")
-
-# COMMAND ----------
-
-# Update result with formatted sample differences for PK mode
-# This will replace the PK-only sample_differences with rich side-by-side comparison
-result["sample_differences"] = formatted_sample_differences
-print("Updated result with formatted sample differences")

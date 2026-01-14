@@ -1059,7 +1059,7 @@ async def list_validation_history(
             vh.status, vh.schema_match, vh.row_count_match,
             vh.row_count_source, vh.row_count_target,
             vh.rows_compared, vh.rows_different, vh.difference_pct,
-            vh.error_message, vh.databricks_run_url,
+            vh.compare_mode, vh.sample_differences, vh.error_message, vh.databricks_run_url,
             COALESCE(
                 (SELECT json_agg(t.name ORDER BY t.name)
                  FROM control.entity_tags et
