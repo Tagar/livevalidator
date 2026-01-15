@@ -6,9 +6,13 @@ const TRUNCATE_LENGTH = 50;
  * Generate a SQL SELECT query for a row
  */
 function generateSqlQuery(tableName, row, columnsToUse = null) {
-  const cols = columnsToUse || Object.keys(row);
+  const rowKeys = Object.keys(row);
+  const cols = columnsToUse || rowKeys;
+  
   const conditions = cols.map(col => {
-    const value = row[col];
+    // Case-insensitive key lookup
+    const actualKey = rowKeys.find(k => k.toLowerCase() === col.toLowerCase()) || col;
+    const value = row[actualKey];
     if (value === null || value === undefined) {
       return `${col} IS NULL`;
     }
@@ -163,7 +167,7 @@ export function SampleDifferencesModal({ validation, onClose }) {
         
         {/* Content - Different for each mode */}
         <div className="flex-1 overflow-auto">
-          {isPKMode && <PKModeView samples={samples} />}
+          {isPKMode && <PKModeView samples={samples} validation={validation} />}
           {isPKPending && <PKPendingView samples={samples} validation={validation} />}
           {isExceptAllMode && !isPKPending && <ExceptAllModeView samples={samples} validation={validation} />}
           {!isPKMode && !isExceptAllMode && (
@@ -202,8 +206,8 @@ function PKPendingView({ samples, validation }) {
     <div>
       <div className="mb-3 p-2 bg-yellow-900/20 border border-yellow-700 rounded">
         <p className="text-yellow-300 text-xs">
-          <strong>⏳ Primary key analysis pending.</strong> Raw difference rows are shown below. 
-          Column-by-column comparison will be available once PK analysis completes.
+          <strong>Raw difference rows.</strong> Column-by-column PK comparison is not available for this validation. 
+          Check the notebook run for details.
         </p>
       </div>
       
@@ -295,9 +299,29 @@ function ExceptAllModeView({ samples, validation }) {
 /**
  * Display for primary_key mode - shows side-by-side comparison grouped by PK
  */
-function PKModeView({ samples }) {
+function PKModeView({ samples, validation }) {
   if (!samples?.samples || samples.samples.length === 0) {
-    return <p className="text-gray-400">No sample data available</p>;
+    return (
+      <div className="p-3 bg-yellow-900/20 border border-yellow-700 rounded">
+        <p className="text-yellow-300 text-sm">
+          <strong>No column-level differences found.</strong> PK analysis completed but no differing columns were detected.
+        </p>
+        <p className="text-yellow-200 text-xs mt-2">
+          This may indicate the differences are in excluded columns or due to data type coercion. 
+          Check the Databricks notebook run for detailed investigation.
+        </p>
+        {validation?.databricks_run_url && (
+          <a 
+            href={validation.databricks_run_url} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-block mt-2 text-xs text-blue-400 hover:text-blue-300 underline"
+          >
+            Open Notebook Run →
+          </a>
+        )}
+      </div>
+    );
   }
   
   const { pk_columns, samples: pkSamples } = samples;

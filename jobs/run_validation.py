@@ -557,43 +557,8 @@ if serde_result.get('src_df'):
     tgt_df = serde_result.pop('tgt_df')
     sample_df = serde_result.pop('sample_df')
 
-# Format PK mode samples BEFORE API call
-if compare_mode == "primary_key" and result.get("rows_different", 0) > 0 and result.get('sample_differences'):
-    src_sample = [r.asDict() for r in null_safe_join(src_df, sample_df, pk_columns).collect()]
-    tgt_sample = [r.asDict() for r in null_safe_join(tgt_df, sample_df, pk_columns).collect()]
-    
-    if len(src_sample) == len(tgt_sample):
-        # Create properly formatted PK samples for the API
-        formatted_pk_samples = []
-        zipped_samples = zip(
-            sorted(src_sample, key=lambda item: [item[pk] for pk in pk_columns]),
-            sorted(tgt_sample, key=lambda item: [item[pk] for pk in pk_columns])
-        )
-        
-        for src, tgt in zipped_samples:
-            pk_values = {pk: src[pk] for pk in pk_columns}
-            differences = []
-            for k in src.keys():
-                if k not in pk_columns and src[k] != tgt[k]:
-                    differences.append({
-                        "column": k,
-                        "source_value": serialize_value(src[k]),
-                        "target_value": serialize_value(tgt[k])
-                    })
-            if differences:
-                formatted_pk_samples.append({
-                    "pk": pk_values,
-                    "differences": differences
-                })
-        
-        # Replace raw sample_differences with formatted PK structure
-        serde_result["sample_differences"] = {
-            "mode": "primary_key",
-            "pk_columns": pk_columns,
-            "samples": formatted_pk_samples
-        }
-
-api_call("POST", "/api/validation-history", serde_result)
+history_response = api_call("POST", "/api/validation-history", serde_result)
+history_id = history_response.get("id") if history_response else None
 
 # COMMAND ----------
 # MAGIC %md
@@ -647,3 +612,49 @@ mismatch_df: DataFrame = spark.createDataFrame(mismatch_samples).display()
 
 # also print the plain text representation for whitespace debugging
 print(mismatch_samples)
+
+# COMMAND ----------
+# Update validation history with formatted PK analysis
+
+if not history_id:
+    dbutils.notebook.exit("No history_id returned from POST, skipping PK analysis update")
+
+# COMMAND ----------
+
+# Re-zip since the original iterator was consumed
+zipped_for_analysis = zip(
+    sorted(src_sample, key=lambda item: [item[pk] for pk in pk_columns]),
+    sorted(tgt_sample, key=lambda item: [item[pk] for pk in pk_columns])
+)
+
+formatted_pk_samples = []
+for src, tgt in zipped_for_analysis:
+    pk_values = {pk: serialize_value(src[pk]) for pk in pk_columns}
+    differences = []
+    for k in src.keys():
+        if k not in pk_columns:
+            src_val = serialize_value(src[k])
+            tgt_val = serialize_value(tgt[k])
+            if src_val != tgt_val:  # Compare serialized values to avoid type mismatches
+                differences.append({
+                    "column": k,
+                    "source_value": src_val,
+                    "target_value": tgt_val
+                })
+    if differences:
+        formatted_pk_samples.append({
+            "pk": pk_values,
+            "differences": differences
+        })
+
+# PATCH the validation history with formatted PK structure
+pk_sample_differences = {
+    "mode": "primary_key",
+    "pk_columns": pk_columns,
+    "samples": formatted_pk_samples
+}
+
+api_call("PATCH", f"/api/validation-history/{history_id}", {
+    "sample_differences": pk_sample_differences
+})
+print(f"Updated validation history {history_id} with PK analysis ({len(formatted_pk_samples)} samples)")
