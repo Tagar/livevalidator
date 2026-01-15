@@ -70,6 +70,33 @@ uvicorn backend.app:app --reload --port 8000
 
 The frontend will be available at `http://localhost:8000`.
 
+### 6. Setup Database
+```
+psql postgres -c "CREATE USER apprunner WITH PASSWORD 'beepboop123';
+
+CREATE SCHEMA IF NOT EXISTS control;
+GRANT USAGE ON SCHEMA control to apprunner;
+GRANT apprunner TO CURRENT_USER;
+ALTER SCHEMA control OWNER TO apprunner;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA control TO apprunner;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA control TO apprunner;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA control 
+GRANT USAGE, SELECT ON SEQUENCES TO apprunner;"
+```
+
+Followed by:
+```
+psql -d postgres -a -f path/to/your/LiveValidator/src/app/backend/sql/ddl.sql
+psql -d postgres -a -f path/to/your/LiveValidator/src/app/backend/sql/grants.sql
+```
+
+### 7. Seed Database Tables
+```
+psql -d postgres -a -f path/to/your/LiveValidator/src/app/backend/sql/seed_test_data.sql
+```
+
 #### Production Build (Databricks)
 ```bash
 # Build frontend
@@ -81,22 +108,7 @@ npm run build
 databricks bundle deploy
 ```
 
-## Environment Configuration Details
+## Notes
 
-### How It Works
-- **Local**: `src/app/backend/db.py` loads `.env` using `python-dotenv`
-- **Databricks**: Environment variables are configured in the Databricks App UI
-- **Code**: Uses `os.getenv()` which works in both environments
-
-### Supported Environment Variables
-| Variable | Description | Default | Local | Databricks |
-|----------|-------------|---------|-------|------------|
-| `DB_DSN` | PostgreSQL connection string | Lakebase fallback | `.env` | App UI |
-| `DB_USE_SSL` | Enable SSL for database | `true` | `.env` | App UI |
-| `DB_SSL_CA_FILE` | Path to SSL CA certificate | `src/app/backend/databricks-ca.pem` | `.env` | App UI |
-
-### Security Notes
-- Never commit `.env` files to git (already in `.gitignore`)
-- Never commit `.pem` certificates to git (already in `.gitignore`)
-- Use Databricks secrets for sensitive credentials in production
-- Local development can disable SSL for simplicity
+- **Local** uses `.env` file (loaded by `python-dotenv`), **Databricks** uses the App UI for env vars
+- Never commit `.env` or `.pem` files (already gitignored)
