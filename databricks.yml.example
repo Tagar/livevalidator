@@ -54,7 +54,7 @@ resources:
 targets:
 
   permissions:
-  - user_name: <deployer_email>@nxp.com
+  - user_name: <deployer_email>
     level: CAN_MANAGE
   
   migr-prod:
