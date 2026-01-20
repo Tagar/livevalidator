@@ -558,7 +558,15 @@ if serde_result.get('src_df'):
     sample_df = serde_result.pop('sample_df')
 
 history_response = api_call("POST", "/api/validation-history", serde_result)
+
+if result["status"] == "succeeded":
+    dbutils.notebook.exit("Validation passed")
+
 history_id = history_response.get("id") if history_response else None
+
+# COMMAND ----------
+if not result["row_count_match"]:
+    dbutils.notebook.exit("Validation failed - Row count mismatch. Not proceeding with post analysis")
 
 # COMMAND ----------
 # MAGIC %md
