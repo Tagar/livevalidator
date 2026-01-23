@@ -18,7 +18,9 @@ export function TablesView({
   onClearError,
   renderCell,
   onNavigateToResult,
-  onRefresh
+  onRefresh,
+  highlightEntityId,
+  onClearEntityHighlight
 }) {
   const [filterText, setFilterText] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -32,6 +34,21 @@ export function TablesView({
   const [bulkTagMode, setBulkTagMode] = useState('add');
   const tagInputRef = useRef(null);
   const inputElementRef = useRef(null);
+  const highlightedRowRef = useRef(null);
+
+  // Scroll to and highlight the row when highlightEntityId changes
+  useEffect(() => {
+    if (highlightEntityId && highlightedRowRef.current) {
+      highlightedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Clear highlight after 3 seconds
+      const timer = setTimeout(() => {
+        if (onClearEntityHighlight) onClearEntityHighlight();
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [highlightEntityId, onClearEntityHighlight]);
 
   // Helper to safely parse tags (handle JSON strings from backend)
   const parseTags = (tags) => {
@@ -443,12 +460,17 @@ export function TablesView({
                 
                 const isSelected = selectedIds.has(row.id);
                 
+                const isHighlighted = row.id === highlightEntityId;
+                
                 return (
                   <tr 
-                    key={row.id} 
+                    key={row.id}
+                    ref={isHighlighted ? highlightedRowRef : null}
                     className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${
                       isSelected ? 'bg-purple-900/20' : ''
-                    } ${!row.is_active ? 'opacity-50' : ''}`}
+                    } ${!row.is_active ? 'opacity-50' : ''} ${
+                      isHighlighted ? 'bg-rust-light/20 ring-2 ring-rust-light' : ''
+                    }`}
                   >
                     <td className="px-2 py-1 text-sm">
                       <Checkbox

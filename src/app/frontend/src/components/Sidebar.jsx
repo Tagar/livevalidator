@@ -6,6 +6,7 @@ export function Sidebar({ view, setView }) {
   
   const viewLabels = {
     'results': 'Results',
+    'dashboard': 'Dashboard',
     'tables': 'Tables',
     'queries': 'Queries',
     'queue': 'Queue',
@@ -17,7 +18,7 @@ export function Sidebar({ view, setView }) {
     'setup': 'Setup'
   };
 
-  const mainViews = ['results','tables','queries','queue','configuration','type-mappings','schedules','systems'];
+  const mainViews = ['results','dashboard','tables','queries','queue','configuration','type-mappings','schedules','systems'];
   // Show Admin/Setup to CAN_MANAGE users, OR if currentUser is null (DB not initialized yet)
   const bottomViews = (!currentUser || currentUser.role === 'CAN_MANAGE') ? ['admin', 'setup'] : [];
 

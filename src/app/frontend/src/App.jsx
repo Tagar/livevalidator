@@ -45,6 +45,7 @@ import {
 // Views
 import {
   ValidationResultsView,
+  DashboardView,
   TablesView,
   QueriesView,
   QueueView,
@@ -108,6 +109,7 @@ export default function App() {
   const [conflict, setConflict] = useState(null);
   const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: string }
   const [highlightId, setHighlightId] = useState(null); // For highlighting specific validation run
+  const [highlightEntityId, setHighlightEntityId] = useState(null); // For highlighting specific entity in tables/queries
   const [currentUser, setCurrentUser] = useState(null); // { email, role }
   
   // Fetch current user
@@ -432,6 +434,12 @@ export default function App() {
     setView('results');
   };
 
+  // Navigate to entity in tables or queries view
+  const navigateToEntity = (entityType, entityId) => {
+    setHighlightEntityId(entityId);
+    setView(entityType === 'table' ? 'tables' : 'queries');
+  };
+
   // Render cell with inline editing
   const renderCell = (type, row, field, options = null) => {
     const isEditing = editingCell?.type === type && editingCell?.rowId === row.id && editingCell?.field === field;
@@ -524,6 +532,17 @@ export default function App() {
             highlightId={highlightId}
             onClearHighlight={() => setHighlightId(null)}
             onRefresh={validations.refresh}
+            onNavigateToEntity={navigateToEntity}
+          />
+        )}
+
+        {/* Dashboard View */}
+        {view === 'dashboard' && (
+          <DashboardView 
+            data={validations.data}
+            loading={validations.loading}
+            error={validations.error}
+            onNavigateToEntity={navigateToEntity}
           />
         )}
 
@@ -544,6 +563,8 @@ export default function App() {
             renderCell={renderCell}
             onNavigateToResult={navigateToResult}
             onRefresh={refreshAll}
+            highlightEntityId={highlightEntityId}
+            onClearEntityHighlight={() => setHighlightEntityId(null)}
           />
         )}
 
@@ -564,6 +585,8 @@ export default function App() {
             renderCell={renderCell}
             onNavigateToResult={navigateToResult}
             onRefresh={refreshAll}
+            highlightEntityId={highlightEntityId}
+            onClearEntityHighlight={() => setHighlightEntityId(null)}
           />
         )}
 

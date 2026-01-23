@@ -18,7 +18,9 @@ export function QueriesView({
   onClearError,
   renderCell,
   onNavigateToResult,
-  onRefresh
+  onRefresh,
+  highlightEntityId,
+  onClearEntityHighlight
 }) {
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [filterText, setFilterText] = useState('');
@@ -33,6 +35,21 @@ export function QueriesView({
   const [bulkTagMode, setBulkTagMode] = useState('add');
   const tagInputRef = useRef(null);
   const inputElementRef = useRef(null);
+  const highlightedRowRef = useRef(null);
+
+  // Scroll to and highlight the row when highlightEntityId changes
+  useEffect(() => {
+    if (highlightEntityId && highlightedRowRef.current) {
+      highlightedRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Clear highlight after 3 seconds
+      const timer = setTimeout(() => {
+        if (onClearEntityHighlight) onClearEntityHighlight();
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [highlightEntityId, onClearEntityHighlight]);
 
   const toggleRow = (rowId) => {
     setExpandedRowId(expandedRowId === rowId ? null : rowId);
@@ -445,11 +462,18 @@ export function QueriesView({
                 const isExpanded = expandedRowId === row.id;
                 const isSelected = selectedIds.has(row.id);
                 
+                const isHighlighted = row.id === highlightEntityId;
+                
                 return (
                   <React.Fragment key={row.id}>
-                    <tr className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${
-                      isSelected ? 'bg-purple-900/20' : ''
-                    } ${!row.is_active ? 'opacity-50' : ''}`}>
+                    <tr 
+                      ref={isHighlighted ? highlightedRowRef : null}
+                      className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${
+                        isSelected ? 'bg-purple-900/20' : ''
+                      } ${!row.is_active ? 'opacity-50' : ''} ${
+                        isHighlighted ? 'bg-rust-light/20 ring-2 ring-rust-light' : ''
+                      }`}
+                    >
                       <td className="px-2 py-1 text-sm">
                         <Checkbox
                           checked={isSelected}

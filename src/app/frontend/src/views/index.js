@@ -1,4 +1,5 @@
 export { ValidationResultsView } from './ValidationResultsView';
+export { DashboardView } from './DashboardView';
 export { TablesView } from './TablesView';
 export { QueriesView } from './QueriesView';
 export { QueueView } from './QueueView';

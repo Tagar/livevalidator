@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ErrorBox } from '../components/ErrorBox';
-import { TagList, TagBadge } from '../components/TagBadge';
-import { Checkbox } from '../components/Checkbox';
+import { TagBadge } from '../components/TagBadge';
 import { SampleDifferencesModal } from '../components/modals/SampleDifferencesModal';
+import { ValidationResultsTable } from '../components/ValidationResultsTable';
 import { validationService } from '../services/api';
 
-export function ValidationResultsView({ data, loading, error, onClearError, highlightId, onClearHighlight, onRefresh }) {
+export function ValidationResultsView({ data, loading, error, onClearError, highlightId, onClearHighlight, onRefresh, onNavigateToEntity }) {
   const [sortConfig, setSortConfig] = useState({ key: 'requested_at', direction: 'desc' });
   const [filters, setFilters] = useState({
     entity_name: '',
@@ -336,22 +336,6 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
     return result;
   }, [data, filters, filterTags, sortConfig, dateFrom, dateTo]);
 
-  const SortableHeader = ({ label, sortKey, className = "" }) => (
-    <th 
-      className={`text-left px-2 py-1.5 text-sm text-gray-300 font-semibold cursor-pointer hover:bg-charcoal-300/30 transition-colors select-none ${className}`}
-      onClick={() => handleSort(sortKey)}
-    >
-      <div className="flex items-center gap-1">
-        {label}
-        {sortConfig.key === sortKey && (
-          <span className="text-rust-light">
-            {sortConfig.direction === 'asc' ? '↑' : '↓'}
-          </span>
-        )}
-      </div>
-    </th>
-  );
-
   return (
     <>
       {error && error.action !== "setup_required" && <ErrorBox message={error.message} onClose={onClearError} />}
@@ -555,153 +539,24 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[1400px]">
-
-            <thead className="bg-charcoal-400 border-b border-charcoal-200">
-              <tr>
-                <th className="px-2 py-1.5 w-12 text-center">
-                  <Checkbox
-                    checked={selectedIds.length === filteredAndSortedData.length && filteredAndSortedData.length > 0}
-                    onChange={toggleSelectAll}
-                    className="align-middle"
-                  />
-                </th>
-                <SortableHeader label="Entity" sortKey="entity_name" className="px-2 py-1.5 text-left max-w-[500px]" />
-                <SortableHeader label="Type" sortKey="entity_type" className="px-2 py-1.5 text-left" />
-                <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold">Tags</th>
-                <SortableHeader label="Status" sortKey="status" className="px-2 py-1.5 text-left" />
-                <SortableHeader label="Duration" sortKey="duration" className="px-2 py-1.5 text-left" />
-                <SortableHeader label="Source → Target" sortKey="systems" className="px-2 py-1.5 text-left" />
-                <SortableHeader label="Row Counts" sortKey="row_counts" className="px-2 py-1.5 text-left whitespace-nowrap" />
-                <SortableHeader label="Diffs" sortKey="differences" className="px-2 py-1.5 text-left whitespace-nowrap" />
-                <SortableHeader label="Triggered" sortKey="requested_at" className="px-2 py-1.5 text-left" />
-                <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold w-16">Details</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {filteredAndSortedData.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="text-center p-8 text-gray-500 text-base">
-                    {data.length === 0
-                      ? "No validation history yet. Run a validation from Tables or Queries!"
-                      : "No results match the current filters."}
-                  </td>
-                </tr>
-              ) : (
-                filteredAndSortedData.map((v) => (
-                  <tr
-                    key={v.id}
-                    ref={v.id === highlightId ? highlightedRowRef : null}
-                    className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${
-                      v.id === highlightId ? 'bg-rust-light/20 ring-2 ring-rust-light' : ''
-                    }`}
-                  >
-                    <td className="px-2 py-1.5 text-center align-middle">
-                      <Checkbox
-                        checked={selectedIds.includes(v.id)}
-                        onChange={() => toggleSelectRow(v.id)}
-                        className="align-middle"
-                      />
-                    </td>
-                    <td className="px-2 py-1.5 text-gray-200 font-medium text-sm max-w-[500px]" title={v.entity_name}>
-                      <div className="truncate overflow-hidden whitespace-nowrap [direction:rtl] text-left">
-                        <span className="[direction:ltr]">{v.entity_name}</span>
-                      </div>
-                    </td>
-
-                    <td className="px-2 py-1.5">
-                      <span
-                        className={`px-1.5 py-0.5 text-sm rounded-full ${
-                          v.entity_type === 'table'
-                            ? 'bg-blue-900/40 text-blue-300 border border-blue-700'
-                            : 'bg-purple-900/40 text-purple-300 border border-purple-700'
-                        }`}
-                      >
-                        {v.entity_type}
-                      </span>
-                    </td>
-
-                    <td className="px-2 py-1.5">
-                      <TagList tags={parseTags(v.tags)} maxVisible={4} />
-                    </td>
-
-                    <td className="px-2 py-1.5">
-                      {v.status === 'succeeded' ? (
-                        <span className="px-1.5 py-0.5 text-sm rounded-full bg-green-900/40 text-green-300 border border-green-700 whitespace-nowrap">
-                          ✓ Success
-                        </span>
-                      ) : v.status === 'error' ? (
-                        <span 
-                          className="px-1.5 py-0.5 text-sm rounded-full bg-orange-900/40 text-orange-300 border border-orange-700 whitespace-nowrap cursor-help"
-                          title={v.error_message || 'Unknown error'}
-                        >
-                          ⚠ Error
-                        </span>
-                      ) : (
-                        <span className="px-1.5 py-0.5 text-sm rounded-full bg-red-900/40 text-red-300 border border-red-700 whitespace-nowrap">
-                          ✗ Failed
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-gray-300 text-sm whitespace-nowrap">
-                      {((v.duration_seconds || 0) / 60).toFixed(1)}m
-                    </td>
-
-                    <td className="px-2 py-1.5 text-sm text-gray-400 whitespace-nowrap">
-                      {v.source_system_name} → {v.target_system_name}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-sm whitespace-nowrap">
-                      {v.row_count_match ? (
-                        <span className="text-green-400">✓ {v.row_count_source?.toLocaleString()}</span>
-                      ) : (
-                        <span className="text-red-400">
-                          {v.row_count_source?.toLocaleString()} ≠ {v.row_count_target?.toLocaleString()}
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-sm whitespace-nowrap">
-                      {v.rows_different == null ? (
-                        <span className="text-gray-500">-</span>
-                      ) : v.rows_different > 0 ? (
-                        <button
-                          onClick={() => setSelectedSample(v)}
-                          className="text-rust-light font-medium hover:text-rust-lighter underline decoration-dotted cursor-pointer transition-colors"
-                          title="Click to view sample differences"
-                        >
-                          {v.rows_different.toLocaleString()} ({v.difference_pct}%)
-                        </button>
-                      ) : (
-                        <span className="text-green-400">0</span>
-                      )}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-sm text-gray-400 whitespace-nowrap">
-                      {new Date(v.requested_at).toLocaleString()}
-                    </td>
-
-                    <td className="px-2 py-1.5 text-sm whitespace-nowrap">
-                      {v.databricks_run_url && (
-                        <a
-                          href={v.databricks_run_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-purple-4 00 hover:text-purple-300 underline"
-                        >
-                          View
-                        </a>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          </div>
+          <ValidationResultsTable
+            data={filteredAndSortedData}
+            onViewSample={setSelectedSample}
+            onEntityClick={onNavigateToEntity}
+            showCheckboxes={true}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelectRow}
+            onToggleSelectAll={toggleSelectAll}
+            highlightId={highlightId}
+            highlightedRowRef={highlightedRowRef}
+            sortable={true}
+            sortConfig={sortConfig}
+            onSort={handleSort}
+            emptyMessage={data.length === 0 
+              ? "No validation history yet. Run a validation from Tables or Queries!" 
+              : "No results match the current filters."}
+            maxHeight={800}
+          />
         </div>
       )}
 
