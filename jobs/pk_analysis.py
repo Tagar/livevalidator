@@ -1,9 +1,51 @@
-from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import broadcast
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pyspark.sql import DataFrame
+
+
+def compare_pk_samples(
+    src_rows: list[dict],
+    tgt_rows: list[dict],
+    pk_columns: list[str],
+    source_system_name: str,
+    target_system_name: str
+) -> list[dict] | None:
+    """
+    Pure Python comparison of source/target rows - no Spark dependency.
+    
+    Args:
+        src_rows: Source rows as list of dicts
+        tgt_rows: Target rows as list of dicts  
+        pk_columns: Primary key column names
+        source_system_name: Name of source system
+        target_system_name: Name of target system
+    
+    Returns:
+        List of mismatch dicts with .system key, or None if row counts don't match
+    """
+    if len(src_rows) != len(tgt_rows):
+        return None
+    
+    zipped_samples = zip(
+        sorted(src_rows, key=lambda item: [item[pk] for pk in pk_columns]),
+        sorted(tgt_rows, key=lambda item: [item[pk] for pk in pk_columns])
+    )
+    
+    return [
+        {**{pk: src[pk] for pk in pk_columns}, **item}
+        for src, tgt in zipped_samples
+        for item in [
+            {".system": source_system_name, **{k: v for k, v in src.items() if v != tgt[k]}},
+            {".system": target_system_name, **{k: tgt[k] for k, v in src.items() if v != tgt[k]}}
+        ]
+    ]
+
 
 def _null_safe_join(lhs: DataFrame, rhs: DataFrame, keys: list[str], how: str = "inner") -> DataFrame:
     """Join DataFrames with null-safe key comparison"""
-    from pyspark.sql.functions import col, coalesce, lit
+    from pyspark.sql.functions import col, coalesce, lit  # noqa: PLC0415
     jk: list[str] = [f"__k{i}" for i in range(len(keys))]
     null_sentinel: str = "live_validator_null_placeholder"
     
@@ -12,6 +54,7 @@ def _null_safe_join(lhs: DataFrame, rhs: DataFrame, keys: list[str], how: str = 
         return df.select("*", *nulls_replaced)
 
     return with_join_keys(lhs).join(with_join_keys(rhs).drop(*keys), jk, how).drop(*jk)
+
 
 def run_pk_analysis(result: dict) -> dict | None:
     """
@@ -24,6 +67,9 @@ def run_pk_analysis(result: dict) -> dict | None:
     Returns:
         pk_sample_differences dict or None if analysis not applicable
     """
+    from pyspark.sql import SparkSession  # noqa: PLC0415
+    from pyspark.sql.functions import broadcast  # noqa: PLC0415
+    
     spark = SparkSession.getActiveSession()
     
     pk_columns: list[str] = result.get("pk_columns", [])
@@ -36,28 +82,16 @@ def run_pk_analysis(result: dict) -> dict | None:
     if not all([src_df, tgt_df, sample_df, pk_columns]):
         return None
     
-    # Get samples joined back to full rows
-    src_sample: list[dict] = [r.asDict() for r in _null_safe_join(src_df, broadcast(sample_df), pk_columns).collect()]
-    tgt_sample: list[dict] = [r.asDict() for r in _null_safe_join(tgt_df, broadcast(sample_df), pk_columns).collect()]
+    # Collect from Spark DataFrames
+    src_rows: list[dict] = [r.asDict() for r in _null_safe_join(src_df, broadcast(sample_df), pk_columns).collect()]
+    tgt_rows: list[dict] = [r.asDict() for r in _null_safe_join(tgt_df, broadcast(sample_df), pk_columns).collect()]
     
-    if len(tgt_sample) != len(src_sample):
+    # Pure Python comparison
+    mismatch_samples = compare_pk_samples(src_rows, tgt_rows, pk_columns, source_system_name, target_system_name)
+    
+    if mismatch_samples is None:
         print("Found inconsistencies when matching primary keys. One or more PKs may be invalid.")
         return None
-
-    # Build formatted samples with column-level differences
-    zipped_samples: zip[tuple[dict, dict]] = zip(
-        sorted(src_sample, key=lambda item: [item[pk] for pk in pk_columns]),
-        sorted(tgt_sample, key=lambda item: [item[pk] for pk in pk_columns])
-    )
-
-    mismatch_samples: list[dict] = [
-    {**{pk: src[pk] for pk in pk_columns}, **item}
-    for src, tgt in zipped_samples
-    for item in [
-        {".system": source_system_name, **{k: v for k, v in src.items() if v != tgt[k]}}, 
-        {".system": target_system_name, **{k: tgt[k] for k, v in src.items() if v != tgt[k]}}
-    ]
-    ]
 
     if mismatch_samples:
         mismatch_df: DataFrame = spark.createDataFrame(mismatch_samples)

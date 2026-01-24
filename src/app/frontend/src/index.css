@@ -95,9 +95,7 @@
 .writing-vertical {
   writing-mode: vertical-rl;
   text-orientation: mixed;
-}
-
-/* Clickable pie chart sectors - force cursor on all sector paths */
+}/* Clickable pie chart sectors - force cursor on all sector paths */
 .recharts-sector,
 path.recharts-sector,
 .recharts-pie path,
