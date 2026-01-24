@@ -13,7 +13,7 @@ resources:
           disable_auto_optimization: true
           existing_cluster_id: ${resources.clusters.live_validator_cluster.id}
       
-      max_concurrent_runs: 500
+      max_concurrent_runs: 150
       parameters:
         - name: trigger_id
           default: ""
