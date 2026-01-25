@@ -43,7 +43,7 @@ def compare_pk_samples(
     ]
 
 
-def _null_safe_join(lhs: DataFrame, rhs: DataFrame, keys: list[str], how: str = "inner") -> DataFrame:
+def null_safe_join(lhs: DataFrame, rhs: DataFrame, keys: list[str], how: str = "inner") -> DataFrame:
     """Join DataFrames with null-safe key comparison"""
     from pyspark.sql.functions import col, coalesce, lit  # noqa: PLC0415
     jk: list[str] = [f"__k{i}" for i in range(len(keys))]
@@ -83,8 +83,8 @@ def run_pk_analysis(result: dict) -> dict | None:
         return None
     
     # Collect from Spark DataFrames
-    src_rows: list[dict] = [r.asDict() for r in _null_safe_join(src_df, broadcast(sample_df), pk_columns).collect()]
-    tgt_rows: list[dict] = [r.asDict() for r in _null_safe_join(tgt_df, broadcast(sample_df), pk_columns).collect()]
+    src_rows: list[dict] = [r.asDict() for r in null_safe_join(src_df, broadcast(sample_df), pk_columns).collect()]
+    tgt_rows: list[dict] = [r.asDict() for r in null_safe_join(tgt_df, broadcast(sample_df), pk_columns).collect()]
     
     # Pure Python comparison
     mismatch_samples = compare_pk_samples(src_rows, tgt_rows, pk_columns, source_system_name, target_system_name)

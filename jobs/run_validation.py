@@ -10,7 +10,8 @@ import traceback
 from datetime import datetime, UTC
 from collections.abc import Callable
 from pyspark.sql import DataFrame, Row
-from pyspark.sql.functions import col, lit, xxhash64, coalesce
+from pyspark.sql.functions import col, xxhash64
+from pyspark import StorageLevel
 from databricks.sdk.runtime import dbutils
 
 import sys
@@ -20,7 +21,7 @@ sys.path.append(os.path.abspath('.'))
 from connections import api_call, get_connection_info
 from data_reader import get_type_transformations, read_data, read_count
 from transformation_options import downgrade_unicode
-from pk_analysis import run_pk_analysis
+from pk_analysis import run_pk_analysis, null_safe_join
 
 # COMMAND ----------
 
@@ -70,27 +71,6 @@ spark.conf.set("livevalidator.backend_api_url", backend_api_url)
 print(f"Starting: {name} (trigger_id={trigger_id or 'manual'})")
 
 # COMMAND ----------
-
-# Validate parameters
-if compare_mode not in ["except_all", "primary_key"]:
-    error: str = f"Unsupported compare_mode: {compare_mode}. Must be either 'except_all' or 'primary_key'"
-    api_call("PUT", f"/api/triggers/{trigger_id}/fail", {
-        "status": "error",
-        "error_message": error,
-        "error_details": {"type": "ValueError"}
-    })
-    raise ValueError(error)
-
-if len(replace_special_char) not in (0, 2):
-    error: str = 'Malformatted "replace_special_char" argument. Must be format [<max allowable hex>, <replacement char>]'
-    api_call("PUT", f"/api/triggers/{trigger_id}/fail", {
-        "status": "error",
-        "error_message": error,
-        "error_details": {"type": "ValueError"}
-    })
-    raise ValueError(error)
-
-# COMMAND ----------
 # DBTITLE 1,Schema and Count Validation
 
 def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
@@ -136,17 +116,6 @@ def run_except_all(src_df: DataFrame, tgt_df: DataFrame) -> DataFrame:
     """Find rows in source not in target using EXCEPT ALL"""
     return src_df.exceptAll(tgt_df)
 
-def null_safe_join(lhs: DataFrame, rhs: DataFrame, keys: list[str], how: str = "inner") -> DataFrame:
-    """Join DataFrames with null-safe key comparison"""
-    jk: list[str] = [f"__k{i}" for i in range(len(keys))]
-    null_sentinel: str = "live_validator_null_placeholder"
-    
-    def with_join_keys(df: DataFrame) -> DataFrame:
-        nulls_replaced = [coalesce(col(k).cast("string"), lit(null_sentinel)).alias(jk[i]) for i, k in enumerate(keys)]
-        return df.select("*", *nulls_replaced)
-
-    return with_join_keys(lhs).join(with_join_keys(rhs).drop(*keys), jk, how).drop(*jk)
-
 def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str]) -> DataFrame:
     """Find rows with PK matches but different values using hash comparison"""
     def rowhash_exact(df: DataFrame) -> DataFrame:
@@ -182,9 +151,9 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
     # Try unicode downgrade if enabled
     if downgrade_unicode_enabled:
         print(f"Found {diff_count} mismatches, retrying with unicode downgraded...")
-        src_filtered = downgrade_unicode(src_filtered, replace_special_char, extra_replace_regex).cache()
-        tgt_filtered = downgrade_unicode(tgt_filtered, replace_special_char, extra_replace_regex).cache()
-        diff_df = comparison_func(src_filtered, tgt_filtered).cache()
+        src_filtered = downgrade_unicode(src_filtered, replace_special_char, extra_replace_regex).persist(StorageLevel.MEMORY_AND_DISK)
+        tgt_filtered = downgrade_unicode(tgt_filtered, replace_special_char, extra_replace_regex).persist(StorageLevel.MEMORY_AND_DISK)
+        diff_df = comparison_func(src_filtered, tgt_filtered).persist(StorageLevel.MEMORY_AND_DISK)
         diff_count = diff_df.count()
         
         if diff_count == 0:
@@ -213,24 +182,28 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
 
 # COMMAND ----------
 
-# Initialize result with metadata
-result: dict = {
-    "trigger_id": int(trigger_id) if trigger_id else None,
-    "entity_type": "table" if source_table else "compare_query",
-    "entity_name": name,
-    "source": "manual" if not trigger_id else "schedule",
-    "requested_by": "system",
-    "started_at": datetime.now(UTC).isoformat(),
-    "status": "succeeded",
-    "source_table": source_table,
-    "target_table": target_table,
-    "sql_query": sql,
-    "compare_mode": compare_mode,
-    "pk_columns": pk_columns,
-    "exclude_columns": exclude_columns
-}
-
 try:
+    # Initialize result with metadata
+    result: dict = {
+        "trigger_id": int(trigger_id) if trigger_id else None,
+        "entity_type": "table" if source_table else "compare_query",
+        "entity_name": name,
+        "source": "manual" if not trigger_id else "schedule",
+        "requested_by": "system",
+        "started_at": datetime.now(UTC).isoformat(),
+        "status": "succeeded",
+        "source_table": source_table,
+        "target_table": target_table,
+        "sql_query": sql,
+        "compare_mode": compare_mode,
+        "pk_columns": pk_columns,
+        "exclude_columns": exclude_columns
+    }
+
+    # Validate parameters
+    if compare_mode not in ["except_all", "primary_key"]:
+        raise ValueError(f"Unsupported compare_mode: {compare_mode}. Must be either 'except_all' or 'primary_key'")
+    
     # Step 1: Connect to systems
     src_conn: dict = get_connection_info(source_system_name)
     tgt_conn: dict = get_connection_info(target_system_name)
@@ -257,13 +230,18 @@ try:
     result.update(count_result)
 
     # Step 5: Apply max_rows limit if configured
+    result["source_was_limited"] = False
     if src_conn["system"]["max_rows"] and count_result["rows_compared"] > src_conn["system"]["max_rows"]:
         print(f"Limiting source system {source_system_name} for row value check...")
         src_df = src_df.limit(src_conn["system"]["max_rows"])
         result["rows_compared"] = src_conn["system"]["max_rows"]
+        result["source_was_limited"] = True
     if tgt_conn["system"]["max_rows"]:
         print(f"Ignoring target system max row limit of '{tgt_conn['system']['max_rows']}', can only be applied to source system...")
     
+    src_df = src_df.persist(StorageLevel.MEMORY_AND_DISK)
+    tgt_df = tgt_df.persist(StorageLevel.MEMORY_AND_DISK)
+
     # Step 6: Row-level validation (only if counts match)
     if count_result["row_count_match"]:
         # Validate PK columns exist and are unique for primary_key mode
@@ -282,7 +260,8 @@ try:
         result.update(row_result)
         result["rows_matched"] = max(result["rows_compared"] - result["rows_different"], 0)
     else:
-        result.update({"rows_compared": None, "rows_matched": None, "rows_different": None})
+        # if the row count match failed, we need to keep the dataframes for post analysis
+        result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None})
 
     # Step 7: Determine final status
     if result["rows_different"] == 0:
@@ -333,11 +312,15 @@ history_id: int | None = history_response.get("id") if history_response else Non
 
 # COMMAND ----------
 
-if not result["row_count_match"]:
-    dbutils.notebook.exit("Validation failed - Row count mismatch. Not proceeding with post analysis")
+# MAGIC %md
+# MAGIC ## Row Count Post Analysis
 
 # COMMAND ----------
+if not result["row_count_match"]:
+    #TODO: Conduct post processing analysis
+    dbutils.notebook.exit("Validation failed - Row count mismatch. Conducted post processing analysis")
 
+# COMMAND ----------
 # MAGIC %md
 # MAGIC ## PK Post Analysis
 

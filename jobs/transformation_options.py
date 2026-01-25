@@ -61,6 +61,10 @@ def drop_diacritics(df: DataFrame) -> DataFrame:
 
 def downgrade_unicode(df: DataFrame, replace_special_char: list[str], extra_replace_regex: str = "") -> DataFrame:
     """Apply all unicode downgrade transformations"""
+    
+    if len(replace_special_char) not in (0, 2):
+        raise ValueError('Malformatted "replace_special_char" argument. Must be format [<max allowable hex>, <replacement char>]')
+
     df = sub_non_break_spaces(df)
     df = downgrade_unicode_symbols(df)
     df = drop_diacritics(df)
