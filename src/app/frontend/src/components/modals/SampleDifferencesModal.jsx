@@ -146,7 +146,7 @@ export function SampleDifferencesModal({ validation, onClose }) {
   
   const isPKMode = samples?.mode === 'primary_key';
   const isRowCountMismatch = samples?.mode === 'row_count_mismatch';
-  const isExceptAllMode = Array.isArray(samples);
+  const isExceptAllMode = Array.isArray(samples) && samples.length > 0;
   const isPKPending = validation.compare_mode === 'primary_key' && isExceptAllMode;
   const isExceptAllCountMismatch = validation.compare_mode === 'except_all' && !validation.row_count_match && !isExceptAllMode;
   const isPKCountPending = validation.compare_mode === 'primary_key' && !validation.row_count_match && !isRowCountMismatch;
