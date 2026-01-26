@@ -108,6 +108,19 @@ npm run build
 databricks bundle deploy
 ```
 
+## Running Tests
+
+```bash
+source venv/bin/activate
+pip install pytest
+pytest
+```
+
+Tests are designed to run without Spark. Only pure Python logic is tested; Spark-dependent code is tested manually on Databricks.
+
+### Cursor Setup
+**Cmd+Shift+P** → "Python: Configure Tests" → select **pytest** → select **tests** folder.
+
 ## Notes
 
 - **Local** uses `.env` file (loaded by `python-dotenv`), **Databricks** uses the App UI for env vars

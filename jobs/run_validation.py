@@ -6,21 +6,22 @@
 # COMMAND ----------
 
 import json
-import requests
 import traceback
-from datetime import datetime, date, UTC
-from decimal import Decimal
+from datetime import datetime, UTC
 from collections.abc import Callable
-from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, lit, regexp_replace, translate, xxhash64, coalesce, broadcast
-from databricks.sdk import WorkspaceClient
+from pyspark.sql import DataFrame, Row
+from pyspark.sql.functions import col, xxhash64
+from pyspark import StorageLevel
+from databricks.sdk.runtime import dbutils
 
-# Initialize workspace client for auth
-w: WorkspaceClient = WorkspaceClient(
-    host=spark.conf.get('spark.databricks.workspaceUrl'),
-    client_id=dbutils.secrets.get(scope = "livevalidator", key = "lv-app-id"),
-    client_secret=dbutils.secrets.get(scope = "livevalidator", key = "lv-app-secret")
-    )
+import sys
+import os
+sys.path.append(os.path.abspath('.'))
+
+from connections import api_call, get_connection_info
+from data_reader import get_type_transformations, read_data, read_count
+from transformation_options import downgrade_unicode
+from pk_analysis import run_pk_analysis, run_pk_count_analysis, null_safe_join
 
 # COMMAND ----------
 
@@ -39,8 +40,8 @@ dbutils.widgets.text("pk_columns", "")
 dbutils.widgets.text("include_columns", "[]")
 dbutils.widgets.text("exclude_columns", "[]")
 dbutils.widgets.text("downgrade_unicode", "false")
-dbutils.widgets.text("replace_special_char", "[]") # ["7F","?"]
-dbutils.widgets.text("extra_replace_regex", "") # \.\.\.
+dbutils.widgets.text("replace_special_char", "[]")
+dbutils.widgets.text("extra_replace_regex", "")
 dbutils.widgets.text("options", "")
 
 # COMMAND ----------
@@ -48,8 +49,8 @@ dbutils.widgets.text("options", "")
 # Parse parameters
 trigger_id: str | None = dbutils.widgets.get("trigger_id") or None
 name: str = dbutils.widgets.get("name")
-source_system_name: int = dbutils.widgets.get("source_system_name")
-target_system_name: int = dbutils.widgets.get("target_system_name")
+source_system_name: str = dbutils.widgets.get("source_system_name")
+target_system_name: str = dbutils.widgets.get("target_system_name")
 backend_api_url: str = dbutils.widgets.get("backend_api_url")
 source_table: str | None = dbutils.widgets.get("source_table") or None
 target_table: str | None = dbutils.widgets.get("target_table") or None
@@ -59,190 +60,29 @@ compare_mode: str = dbutils.widgets.get("compare_mode")
 pk_columns: list[str] = [c for c in json.loads(dbutils.widgets.get("pk_columns") or "[]") if c]
 include_columns: list[str] = [c for c in json.loads(dbutils.widgets.get("include_columns") or "[]") if c]
 exclude_columns: list[str] = [c for c in json.loads(dbutils.widgets.get("exclude_columns") or "[]") if c]
-downgrade_unicode: bool = dbutils.widgets.get("downgrade_unicode").lower() == "true"
+downgrade_unicode_enabled: bool = dbutils.widgets.get("downgrade_unicode").lower() == "true"
 replace_special_char: list[str] = json.loads(dbutils.widgets.get("replace_special_char") or "[]")
 extra_replace_regex: str = dbutils.widgets.get("extra_replace_regex")
 options: dict = json.loads(dbutils.widgets.get("options") or "{}")
 
+# Set backend URL in spark conf for connections module
+spark.conf.set("livevalidator.backend_api_url", backend_api_url)
+
 print(f"Starting: {name} (trigger_id={trigger_id or 'manual'})")
+
 # COMMAND ----------
-# DBTITLE 1,Define functions to interact with the backend and run schema/count checks
-
-def api_call(method: str, endpoint: str, data: dict | None = None, headers = w.config.authenticate()) -> dict:
-    """Call backend API with Databricks authentication"""
-    url: str = f"{backend_api_url}{endpoint}"
-    response: requests.Response = requests.request(method, url, json=data, headers=headers, timeout=30)
-    response.raise_for_status()
-    return response.json()
-
-if compare_mode not in ["except_all", "primary_key"]:
-    error: str = f"Unsupported compare_mode: {compare_mode}. Must be either 'except_all' or 'primary_key'"
-    api_call("PUT", f"/api/triggers/{trigger_id}/fail", {
-            "status": "error",
-            "error_message": error,
-            "error_details": {"type": type(error).__name__}
-        })
-    raise ValueError(error)
-
-if len(replace_special_char) not in (0,2):
-    error: str = f'Malformmatted "replace_special_char" argument. Must be format [<max allowable hex>, <replacement char>] e.g. ["7F", "?"] or ["FF", "�"]'
-    api_call("PUT", f"/api/triggers/{trigger_id}/fail", {
-            "status": "error",
-            "error_message": error,
-            "error_details": {"type": type(error).__name__}
-        })
-    raise ValueError(error)
-
-def get_connection_info(system_name: str) -> dict:
-    """Fetch system and prepare connection info"""
-    system: dict = api_call("GET", f"/api/systems/name/{system_name}")
-    
-    if system["kind"] == "Databricks":
-        return {"type": "catalog", "catalog": system.get("catalog"), "system": system}
-    
-    jdbc_str: str
-    if system["jdbc_string"]:
-        jdbc_str = system["jdbc_string"]
-    else:
-        match system["kind"]:
-            case "Teradata":
-                jdbc_str = f"jdbc:teradata://{system['host']}"
-            case "Oracle":
-                jdbc_str = f"jdbc:oracle:thin:@//{system['host']}:{system['port']}/{system['database']}"
-            case "SQLServer":
-                jdbc_str = f"jdbc:sqlserver://{system['host']}:{system['port']};databaseName={system['database']};encrypt=true;trustServerCertificate=true"
-            case _:
-                jdbc_str = f"jdbc:{system['kind'].lower()}://{system['host']}:{system['port']}/{system['database']}"
-        print(f"Generated {system['kind']} JDBC string: {jdbc_str}")
-
-    scope = system.get("secret_scope") or "livevalidator"
-    return {
-        "type": "jdbc",
-        "jdbc_string": jdbc_str,
-        "username": dbutils.secrets.get(scope, system["user_secret_key"]) if system.get("user_secret_key") else None,
-        "password": dbutils.secrets.get(scope, system["pass_secret_key"]) if system.get("pass_secret_key") else None,
-        "system": system
-    }    
-
-def get_type_transformations(source_system_id: int, target_system_id: int) -> tuple[str, str]:
-    """
-    Fetch type transformation functions for a system pair. Empty strings mean no transformation defined.
-    """
-    data: dict = api_call("GET", f"/api/type-transformations/for-validation/{source_system_id}/{target_system_id}")
-
-    source_func: str = data.get('system_a_function', '')
-    target_func: str = data.get('system_b_function', '')
-
-    return source_func, target_func
-
-def query_jdbc(conn_info: dict, query: str) -> DataFrame:    
-    driver = conn_info["system"].get("driver_connector")
-    if not driver:
-        raise ValueError(f"JDBC driver not set for system: {conn_info['system']['name']}")
-    
-    return spark.read.format("jdbc") \
-        .option("url", conn_info["jdbc_string"]).option("driver", driver).option("query", query) \
-        .option("user", conn_info.get("username")).option("password", conn_info.get("password")).load()
-
-def get_column_types(conn: dict, table: str | None = None) -> list[tuple[str, str]]:
-
-    tbl_parts = table.split(".")
-    if len(tbl_parts) == 2:
-        schema, tbl = tbl_parts
-        catalog = None
-    elif len(tbl_parts) == 3:
-        catalog, schema, tbl = tbl_parts
-    else:
-        raise ValueError(f"Table must have format 'catalog.schema.table' or 'schema.table' for type mapping.")
-
-    match conn["system"]["kind"]:
-        case "Databricks":
-            table_schema = spark.read.table(f"{catalog}.{schema}.{tbl}").schema
-            return [(col.name, str(col.dataType)) for col in table_schema.fields]
-        case "Teradata":
-            query_columns = f"""
-            HELP COLUMN {schema.upper()}.{tbl.upper()}.*
-            """
-        case "Oracle":
-            query_columns = f"""
-            SELECT column_name, data_type FROM all_tab_columns
-            WHERE table_name = '{tbl.upper()}' AND owner = '{schema.upper()}'
-            """
-        case "Netezza" | "SQLServer" | "MySQL" | "Postgres" | "Snowflake":
-            query_columns = f"""
-            SELECT column_name, data_type FROM information_schema.columns
-            WHERE UPPER(table_name) = '{tbl.upper()}' AND UPPER(table_schema) = '{schema.upper()}'
-            """
-            if catalog:
-                query_columns += f" AND UPPER(TABLE_CATALOG) = '{catalog.upper()}'"
-        case _:
-            raise ValueError(f"Unsupported system type: {conn['system']['kind']}")
-
-    # Read the column names into a DataFrame
-    column_df: DataFrame = query_jdbc(conn, query_columns)
-
-    # Extract the column names from the DataFrame
-    return [(row[0], row[1]) for row in column_df.collect()]
-
-def generate_read_query(conn: dict, table: str, type_mapping_func: str) -> str:
-    """Generate the query to read the data from the system"""
-
-    print(f"Mapping types for system: '{conn['system']['name']}' with type mapping function: \n{type_mapping_func}")
-    namespace = {}
-    exec(type_mapping_func, namespace)
-    transform_columns: Callable = namespace['transform_columns']
-
-    col_types: list[tuple[str, str]] = get_column_types(conn, table)
-    cast_columns: list[str] = [transform_columns(name, data_type) for name, data_type in col_types] if len(col_types) > 0 else ["*"]
-    return f"SELECT {', '.join(cast_columns)} FROM {table}"
-
-def read_data(
-    conn: dict, 
-    table: str | None = None, 
-    query: str | None = None, 
-    watermark_expr: str | None = None, 
-    type_mapping_func: str | None = None
-    ) -> DataFrame:
-
-    """Read data from system"""
-    is_databricks: bool = conn["system"]["kind"] == "Databricks"
-
-    if query:
-        if watermark_expr:
-            print(f"Ignoring watermark expression for 'query' entity: {watermark_expr}")
-        if is_databricks:
-            if conn["type"] == "catalog":
-                spark.sql(f"USE CATALOG `{conn['catalog']}`;")
-            return spark.sql(query)
-        else:
-            return query_jdbc(conn, query)
-    
-    # it is 'table' and we may need to do type mapping
-    if is_databricks:
-        table: str = f"`{conn['catalog']}`.{table}"
-
-    watermark_expr = f" WHERE {watermark_expr}" if watermark_expr else ""
-    read_query = generate_read_query(conn, table, type_mapping_func) if type_mapping_func.strip() else f"SELECT * FROM {table}"
-    read_query += watermark_expr
-
-    if conn["type"] == "jdbc":
-        return query_jdbc(conn, read_query)
-    
-    return spark.sql(read_query) 
-    
-    
+# DBTITLE 1,Schema and Count Validation
 
 def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
-    """Compare column names"""
+    """Compare column names between source and target"""
     src_cols: set[str] = set(c for c in src_df.columns if c not in exclude)
     tgt_cols: set[str] = set(c for c in tgt_df.columns if c not in exclude)
     
-    if src_cols == tgt_cols:
-        print(f"\tSchema matches, {len(src_cols)} columns")
-    else:
-        print(f"\tSchema does not match, source: {len(src_cols)} != target: {len(tgt_cols)} columns")
+    match: bool = src_cols == tgt_cols
+    print(f"\tSchema {'matches' if match else 'does not match'}, source: {len(src_cols)}, target: {len(tgt_cols)} columns")
+    
     return {
-        "schema_match": src_cols == tgt_cols,
+        "schema_match": match,
         "schema_details": {
             "columns_matched": list(src_cols & tgt_cols),
             "columns_missing": list(src_cols - tgt_cols),
@@ -250,180 +90,81 @@ def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) ->
         }
     }
 
-def validate_counts(src_df: DataFrame, tgt_df: DataFrame) -> dict[str, int | bool]:
-    """Compare row counts"""
-    src_count: int = src_df.count()
-    tgt_count: int = tgt_df.count()
-    if src_count == tgt_count:
-        print(f"\tRow counts match: {src_count}")
-    else:
-        print(f"\tRow counts do not match: source: {src_count} != target: {tgt_count}")
+def validate_counts(
+    src_conn: dict, tgt_conn: dict,
+    src_table: str | None, tgt_table: str | None,
+    query: str | None, watermark: str | None
+) -> dict[str, int | bool]:
+    """Compare row counts using pushed-down COUNT(*)"""
+    src_count: int = read_count(src_conn, src_table, query, watermark)
+    tgt_count: int = read_count(tgt_conn, tgt_table, query, watermark)
+    match: bool = src_count == tgt_count
+    
+    print(f"\tRow counts {'match' if match else 'do not match'}: source={src_count}, target={tgt_count}")
+    
     return {
-        "rows_compared": src_count if src_count == tgt_count else 0,
+        "rows_compared": src_count if match else 0,
         "row_count_source": src_count,
         "row_count_target": tgt_count,
-        "row_count_match": src_count == tgt_count
+        "row_count_match": match
     }
 
 # COMMAND ----------
-# DBTITLE 1,Define functions to process validation records
-def serialize_value(val):
-    """Convert non-JSON-serializable objects to serializable formats"""
-    match val:
-        case datetime() | date():
-            return val.isoformat()
-        case Decimal():
-            return float(val)
-        case _ if hasattr(val, 'item'):  # numpy scalar (int64, float64, etc.)
-            return val.item()
-        case _:
-            return val
+# DBTITLE 1,Row-Level Validation Functions
 
-def sub_non_break_spaces(df: DataFrame) -> DataFrame:
-    return df.select(*(
-        regexp_replace(col(c.name).cast("string"), rf"[\u00A0\u2000-\u200A\u202F]", " ").alias(c.name)
-        if c.dataType.typeName() == "string" else c.name
-        for c in df.schema.fields 
-    ))
-
-def downgrade_unicode_symbols(df: DataFrame) -> DataFrame:
-    df = df.select(*(
-        translate(col(c.name).cast("string"), "‘（）Å", "`???").alias(c.name)
-        if c.dataType.typeName() == "string" else c.name
-        for c in df.schema.fields 
-    ))
-
-    return df
-
-def sub_special_char(df: DataFrame, max_hex: str, sub_char: str, extra_replace_regex: str = extra_replace_regex) -> DataFrame:
-    df = df.select(*(
-        regexp_replace(col(c.name).cast("string"), rf"[^\u0000-\u00{max_hex}]", sub_char).alias(c.name)
-        if c.dataType.typeName() == "string" else c.name
-        for c in df.schema.fields 
-    ))
-
-    df = df.select(*(
-        regexp_replace(col(c.name).cast("string"), extra_replace_regex, sub_char).alias(c.name)
-        if c.dataType.typeName() == "string" else c.name
-        for c in df.schema.fields 
-    ))
-
-    return df
-
-def drop_diacritics(df: DataFrame) -> DataFrame:
-    """
-    Drop accents, umlats, and others: ü -> u, ñ -> n, ç -> c, etc.
-    """
-    import pandas as pd
-    from pyspark.sql.types import StringType
-    from pyspark.sql.functions import pandas_udf
-    import unicodedata
-
-    @pandas_udf(StringType())
-    def normalize_string_series(col: pd.Series) -> pd.Series:
-        def _normalize_cell(s):
-            if s is None:
-                return None
-            # Unicode NFKD decomposes characters like ü -> u + ¨
-            s = unicodedata.normalize("NFKD", s)
-            # Drop combining marks (category 'Mn')
-            return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
-        
-        return col.apply(_normalize_cell)
-    
-    return df.select(*(
-        normalize_string_series(col(c.name).cast("string")).alias(c.name)
-        if c.dataType.typeName() == "string" else c.name
-        for c in df.schema.fields 
-    ))
-
-def _downgrade_unicode(df: DataFrame):
-    df = sub_non_break_spaces(df)
-    df = downgrade_unicode_symbols(df)
-    df = drop_diacritics(df)
-    _max_hex, _sub_char = replace_special_char
-    df = sub_special_char(df, _max_hex, _sub_char)
-    return df
-
-# COMMAND ----------
-# DBTITLE 1,Run row-level validation
-
-def run_except_all(src_df: DataFrame, tgt_df: DataFrame):
+def run_except_all(src_df: DataFrame, tgt_df: DataFrame) -> DataFrame:
+    """Find rows in source not in target using EXCEPT ALL"""
     return src_df.exceptAll(tgt_df)
 
-def null_safe_join(lhs, rhs, keys, how="inner"):
-    jk = [f"__k{i}" for i in range(len(keys))]
-    null_sentinel = "live_validator_null_placeholder"
-    def with_join_keys(df):
-        nulls_replaced = [coalesce(col(k).cast("string"), lit(null_sentinel)).alias(jk[i]) for i, k in enumerate(keys)]
-        return df.select("*", *nulls_replaced)
-
-    return with_join_keys(lhs).join(with_join_keys(rhs).drop(*keys), jk, how).drop(*jk)
-
-
-def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str] = pk_columns):
-    def rowhash_exact(df):
-        # treat the entire row as a struct for native Spark hashing
-        cols = [col(c) for c in df.columns]     # no casts
+def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str]) -> DataFrame:
+    """Find rows with PK matches but different values using hash comparison"""
+    def rowhash_exact(df: DataFrame) -> DataFrame:
+        cols: list = [col(c) for c in df.columns]
         return df.withColumn("__hash__", xxhash64(*cols))
     
-    src_df_hash = rowhash_exact(src_df)
-    tgt_df_hash = rowhash_exact(tgt_df)
+    src_hash: DataFrame = rowhash_exact(src_df)
+    tgt_hash: DataFrame = rowhash_exact(tgt_df)
 
-    joined = (
-        null_safe_join(src_df_hash, tgt_df_hash, pk, how="leftouter")
-          .select(
-                *pk,
-                src_df_hash["__hash__"].alias("h_lhs"),
-                tgt_df_hash["__hash__"].alias("h_rhs"))
+    joined: DataFrame = null_safe_join(src_hash, tgt_hash, pk, how="leftouter").select(
+        *pk,
+        src_hash["__hash__"].alias("h_lhs"),
+        tgt_hash["__hash__"].alias("h_rhs")
     )
 
-    mismatch_df = joined.filter(
-        (col("h_lhs") != col("h_rhs")) |
-        col("h_lhs").isNull() | col("h_rhs").isNull()
+    return joined.filter(
+        (col("h_lhs") != col("h_rhs")) | col("h_lhs").isNull() | col("h_rhs").isNull()
     ).drop("h_lhs", "h_rhs", "__hash__")
 
-    return mismatch_df
-
 def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode: str) -> dict:
-    """Row-level validation using EXCEPT ALL"""
+    """Row-level validation - returns diff count and samples"""
     cols: list[str] = [c for c in src_df.columns if c not in exclude]
     src_filtered: DataFrame = src_df.select(*cols)
     tgt_filtered: DataFrame = tgt_df.select(*cols)
-    comparison_func: Callable = run_except_all if mode == "except_all" else run_pk_compare
+    comparison_func: Callable = run_except_all if mode == "except_all" else lambda s, t: run_pk_compare(s, t, pk_columns)
     
     diff_df: DataFrame = comparison_func(src_filtered, tgt_filtered)
     diff_count: int = diff_df.count()
-    if not diff_count:
-        return {
-            "rows_different": 0,
-            "sample_differences": []
-        }
+    
+    if diff_count == 0:
+        return {"rows_different": 0, "sample_differences": []}
 
-    if downgrade_unicode:
-        print(f"Found {str(diff_count)} mis-matches, trying again with unicode downgraded...")
-        # unicode downgrade can be expensive, so we cache results
-        src_filtered = _downgrade_unicode(src_filtered).cache()
-        tgt_filtered = _downgrade_unicode(tgt_filtered).cache()
-        diff_df: DataFrame = comparison_func(src_filtered, tgt_filtered).cache()
-        diff_count: int = diff_df.count()
-        if not diff_count:
-            return {
-                "rows_different": 0,
-                "sample_differences": []
-            }
+    # Try unicode downgrade if enabled
+    if downgrade_unicode_enabled:
+        print(f"Found {diff_count} mismatches, retrying with unicode downgraded...")
+        src_filtered = downgrade_unicode(src_filtered, replace_special_char, extra_replace_regex).persist(StorageLevel.MEMORY_AND_DISK)
+        tgt_filtered = downgrade_unicode(tgt_filtered, replace_special_char, extra_replace_regex).persist(StorageLevel.MEMORY_AND_DISK)
+        diff_df = comparison_func(src_filtered, tgt_filtered).persist(StorageLevel.MEMORY_AND_DISK)
+        diff_count = diff_df.count()
+        
+        if diff_count == 0:
+            return {"rows_different": 0, "sample_differences": []}
     
     print(f"Found {diff_count} differences, extracting sample")
-
     sample_df: DataFrame = diff_df.limit(10)
     
-    # Convert datetime/decimal objects to JSON-serializable formats
-    sample_dicts: list[dict] = []
-    for row in sample_df.collect():
-        row_dict: dict = {k: serialize_value(v) for k, v in row.asDict().items()}
-        sample_dicts.append(row_dict)
+    sample_dicts: list[dict] = [row.asDict() for row in sample_df.collect()]
 
-    if diff_count and mode == "except_all":
+    if mode == "except_all":
         print("\n\n".join(str(row) for row in sample_dicts))
     
     return {
@@ -441,92 +182,98 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
 
 # COMMAND ----------
 
-result: dict = {
-    "trigger_id": int(trigger_id) if trigger_id else None,
-    "entity_type": "table" if source_table else "compare_query",
-    "entity_name": name,
-    "source": "manual" if not trigger_id else "schedule",
-    "requested_by": "system",
-    "started_at": datetime.now(UTC).isoformat(),
-    "status": "succeeded",
-    "source_table": source_table,
-    "target_table": target_table,
-    "sql_query": sql,
-    "compare_mode": compare_mode,
-    "pk_columns": pk_columns,
-    "exclude_columns": exclude_columns
-}
-
 try:
-    # Connect to systems
+    # Initialize result with metadata
+    result: dict = {
+        "trigger_id": int(trigger_id) if trigger_id else None,
+        "entity_type": "table" if source_table else "compare_query",
+        "entity_name": name,
+        "source": "manual" if not trigger_id else "schedule",
+        "requested_by": "system",
+        "started_at": datetime.now(UTC).isoformat(),
+        "status": "succeeded",
+        "source_table": source_table,
+        "target_table": target_table,
+        "sql_query": sql,
+        "compare_mode": compare_mode,
+        "pk_columns": pk_columns,
+        "exclude_columns": exclude_columns
+    }
+
+    # Validate parameters
+    if compare_mode not in ["except_all", "primary_key"]:
+        raise ValueError(f"Unsupported compare_mode: {compare_mode}. Must be either 'except_all' or 'primary_key'")
+    
+    # Step 1: Connect to systems
     src_conn: dict = get_connection_info(source_system_name)
     tgt_conn: dict = get_connection_info(target_system_name)
     
-    result.update({
-        "source_system_id": src_conn["system"]["id"],
-        "target_system_id": tgt_conn["system"]["id"],
-        "source_system_name": source_system_name,
-        "target_system_name": target_system_name
-    })
+    result["source_system_id"] = src_conn["system"]["id"]
+    result["target_system_id"] = tgt_conn["system"]["id"]
+    result["source_system_name"] = source_system_name
+    result["target_system_name"] = target_system_name
     
-    # Read data
+    # Step 2: Read data with type transformations
     print("Reading data...")
     src_xform_func, tgt_xform_func = get_type_transformations(src_conn["system"]["id"], tgt_conn["system"]["id"])
     src_df: DataFrame = read_data(src_conn, table=source_table, query=sql, watermark_expr=watermark_expr, type_mapping_func=src_xform_func)
     tgt_df: DataFrame = read_data(tgt_conn, table=target_table, query=sql, watermark_expr=watermark_expr, type_mapping_func=tgt_xform_func)
     
-    # Validate
+    # Step 3: Validate schema
     print("Validating schema...")
-    result.update(validate_schema(src_df, tgt_df, exclude_columns))
+    schema_result: dict = validate_schema(src_df, tgt_df, exclude_columns)
+    result.update(schema_result)
     
+    # Step 4: Validate counts
     print("Validating counts...")
-    count_result: dict[str, int | bool] = validate_counts(src_df, tgt_df)
+    count_result: dict[str, int | bool] = validate_counts(src_conn, tgt_conn, source_table, target_table, sql, watermark_expr)
     result.update(count_result)
 
-    # limit max rows read for validation
+    # Step 5: Apply max_rows limit if configured
+    result["source_was_limited"] = False
     if src_conn["system"]["max_rows"] and count_result["rows_compared"] > src_conn["system"]["max_rows"]:
         print(f"Limiting source system {source_system_name} for row value check...")
-        src_df: DataFrame = src_df.limit(src_conn["system"]["max_rows"])
+        src_df = src_df.limit(src_conn["system"]["max_rows"])
         result["rows_compared"] = src_conn["system"]["max_rows"]
+        result["source_was_limited"] = True
     if tgt_conn["system"]["max_rows"]:
         print(f"Ignoring target system max row limit of '{tgt_conn['system']['max_rows']}', can only be applied to source system...")
     
-    # Row-level only if counts match AND compare_mode requires it
+    src_df = src_df.persist(StorageLevel.MEMORY_AND_DISK)
+    tgt_df = tgt_df.persist(StorageLevel.MEMORY_AND_DISK)
+
+    # Step 6: Row-level validation (only if counts match)
     if count_result["row_count_match"]:
-
+        # Validate PK columns exist and are unique for primary_key mode
         if compare_mode == "primary_key":
-            # validate the primary keys exist
-            pk_cols_l = (c.lower() for c in pk_columns)
-            tbl_cols_l = (c.lower() for c in src_df.columns)
-            if not set(pk_cols_l).issubset(tbl_cols_l):
-                raise ValueError(f"Incorrect Primary Key(s) specified. Column(s) not present: {str(pk_columns)} do not match the source tables columns {str(src_df.columns)}")
+            pk_cols_lower: set[str] = set(c.lower() for c in pk_columns)
+            src_cols_lower: set[str] = set(c.lower() for c in src_df.columns)
+            if not pk_cols_lower.issubset(src_cols_lower):
+                raise ValueError(f"PK columns {pk_columns} not found in source columns {src_df.columns}")
 
-            # validate the primary keys are unique
-            # to do, cache this information in the entity's table so we only do this once per entity since it is expensive for large tables
-            duplicate_pk = tgt_df.groupBy(*pk_columns).count().filter(col("count") > 1).limit(1).collect()
+            duplicate_pk: list[Row] = tgt_df.groupBy(*pk_columns).count().filter(col("count") > 1).limit(1).collect()
             if duplicate_pk:
-                raise ValueError(f"Incorrect Primary Key(s) specified. Not unique: {duplicate_pk[0].asDict()}")
+                raise ValueError(f"PK not unique: {duplicate_pk[0].asDict()}")
         
         print(f"Validating rows using {compare_mode}...")
-        validation_results: dict = validate_rows(src_df, tgt_df, exclude_columns, compare_mode)
-        result.update(validation_results)
+        row_result: dict = validate_rows(src_df, tgt_df, exclude_columns, compare_mode)
+        result.update(row_result)
         result["rows_matched"] = max(result["rows_compared"] - result["rows_different"], 0)
     else:
-        # Row counts don't match - skip row-level comparison (not applicable)
-        result.update({"rows_compared": None, "rows_matched": None, "rows_different": None})
+        # if the row count match failed, we need to keep the dataframes for post analysis
+        result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None})
 
-    # Success: row counts match AND no row differences
+    # Step 7: Determine final status
     if result["rows_different"] == 0:
-        print(f"[SUCCESS] Validation was successful")
+        print("[SUCCESS] Validation passed")
     else:
-        rows_diff = result.get("rows_different")
-        print(f"[FAILURE] Validation found differences - Schema: {result['schema_match']}, Count: {result['row_count_match']}, Diffs: {rows_diff if rows_diff is not None else 'N/A'}")
+        rows_diff: int | None = result.get("rows_different")
+        print(f"[FAILURE] Schema: {result['schema_match']}, Count: {result['row_count_match']}, Diffs: {rows_diff if rows_diff is not None else 'N/A'}")
         result["status"] = "failed"
 
     result["finished_at"] = datetime.now(UTC).isoformat()
 
 except Exception as e:
-    error_msg: str = str(e)
     print(f"[ERROR] Unexpected failure: {traceback.format_exc()}")
     result.update({
         "status": "error",
@@ -537,7 +284,6 @@ except Exception as e:
         "rows_different": None
     })
     
-    # Report failure if triggered
     if trigger_id:
         api_call("PUT", f"/api/triggers/{trigger_id}/fail", {
             "status": result["status"],
@@ -548,7 +294,7 @@ except Exception as e:
 
 # COMMAND ----------
 
-# Record results
+# Report results to API
 print("Reporting results...")
 
 serde_result: dict = result.copy()
@@ -557,112 +303,38 @@ if serde_result.get('src_df'):
     tgt_df = serde_result.pop('tgt_df')
     sample_df = serde_result.pop('sample_df')
 
-history_response = api_call("POST", "/api/validation-history", serde_result)
+history_response: dict = api_call("POST", "/api/validation-history", serde_result)
 
 if result["status"] == "succeeded":
     dbutils.notebook.exit("Validation passed")
 
-history_id = history_response.get("id") if history_response else None
-
-# COMMAND ----------
-if not result["row_count_match"]:
-    dbutils.notebook.exit("Validation failed - Row count mismatch. Not proceeding with post analysis")
-
-# COMMAND ----------
-# MAGIC %md
-# MAGIC ## Display Mismatch Samples (source side)
-
-# COMMAND ----------
-sample_df.display()
+history_id: int | None = history_response.get("id") if history_response else None
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ## PK Key Mismatch Analysis
-
-# COMMAND ----------
-
-if compare_mode != "primary_key" or result["rows_different"] == 0 or not result.get('sample_differences'):
+if compare_mode != "primary_key" or not history_id:
     dbutils.notebook.exit("Finished")
 
 # COMMAND ----------
-
-src_sample = [r.asDict() for r in null_safe_join(src_df, broadcast(sample_df), pk_columns).collect()]
-tgt_sample = [r.asDict() for r in null_safe_join(tgt_df, broadcast(sample_df), pk_columns).collect()]
-
-# COMMAND ----------
-
-if len(tgt_sample) != len(src_sample):
-    dbutils.notebook.exit(
-        "Found inconsistencies when matching primary keys. "
-        "One or more PKs may be invalid. Validate PKs between source and target."
-    )
+# MAGIC %md
+# MAGIC ## PK Post Analysis
 
 # COMMAND ----------
-
-zipped_samples: zip = zip(
-    sorted(src_sample, key=lambda item: [item[pk] for pk in pk_columns]),
-    sorted(tgt_sample, key=lambda item: [item[pk] for pk in pk_columns])
-)
-
-mismatch_samples: list[dict] = [
-    {**{pk: src[pk] for pk in pk_columns}, **item}
-    for src, tgt in zipped_samples
-    for item in [
-        {".system": source_system_name, **{k: v for k, v in src.items() if v != tgt[k]}}, 
-        {".system": target_system_name, **{k: tgt[k] for k, v in src.items() if v != tgt[k]}}
-    ]
-]
-
-mismatch_df: DataFrame = spark.createDataFrame(mismatch_samples).display()
+if not result["row_count_match"]:
+    pk_count_analysis = run_pk_count_analysis(result)
+    if pk_count_analysis and history_id:
+        api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": pk_count_analysis})
+        if not pk_count_analysis.get("skipped"):
+            print(f"Updated validation history {history_id} with PK count analysis")
+    dbutils.notebook.exit("Validation failed - Row count mismatch")
 
 # COMMAND ----------
-
-# also print the plain text representation for whitespace debugging
-print(mismatch_samples)
-
-# COMMAND ----------
-# Update validation history with formatted PK analysis
-
-if not history_id:
-    dbutils.notebook.exit("No history_id returned from POST, skipping PK analysis update")
+# Display mismatch samples
+sample_df.display()
 
 # COMMAND ----------
-
-# Re-zip since the original iterator was consumed
-zipped_for_analysis = zip(
-    sorted(src_sample, key=lambda item: [item[pk] for pk in pk_columns]),
-    sorted(tgt_sample, key=lambda item: [item[pk] for pk in pk_columns])
-)
-
-formatted_pk_samples = []
-for src, tgt in zipped_for_analysis:
-    pk_values = {pk: serialize_value(src[pk]) for pk in pk_columns}
-    differences = []
-    for k in src.keys():
-        if k not in pk_columns:
-            src_val = serialize_value(src[k])
-            tgt_val = serialize_value(tgt[k])
-            if src_val != tgt_val:  # Compare serialized values to avoid type mismatches
-                differences.append({
-                    "column": k,
-                    "source_value": src_val,
-                    "target_value": tgt_val
-                })
-    if differences:
-        formatted_pk_samples.append({
-            "pk": pk_values,
-            "differences": differences
-        })
-
-# PATCH the validation history with formatted PK structure
-pk_sample_differences = {
-    "mode": "primary_key",
-    "pk_columns": pk_columns,
-    "samples": formatted_pk_samples
-}
-
-api_call("PATCH", f"/api/validation-history/{history_id}", {
-    "sample_differences": pk_sample_differences
-})
-print(f"Updated validation history {history_id} with PK analysis ({len(formatted_pk_samples)} samples)")
+# Update validation history with PK analysis
+pk_sample_differences: dict | None = run_pk_analysis(result)
+if pk_sample_differences:
+    api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": pk_sample_differences})
+    print(f"Updated validation history {history_id} with PK analysis ({len(pk_sample_differences['samples'])} samples)")

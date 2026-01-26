@@ -1003,6 +1003,82 @@ async def get_running_per_system():
     return {row['system_id']: int(row['count']) for row in rows}
 
 # ---------- Validation History ----------
+
+def _transform_pk_samples_to_legacy(sample_differences: dict | str | None) -> dict | None:
+    """
+    Transform NEW flat pk_sample format to OLD nested format for frontend compatibility.
+    
+    NEW format: {"mode": "primary_key", "pk_columns": [...], "samples": [
+        {"pk_col": val, ".system": "source", "diff_col": val}, ...
+    ]}
+    
+    OLD format: {"mode": "primary_key", "pk_columns": [...], "samples": [
+        {"pk": {pk_col: val}, "differences": [{"column": ..., "source_value": ..., "target_value": ...}]}
+    ]}
+    
+    TODO: Remove after March 2026 when all records use old format or frontend updated
+    """
+    if sample_differences is None:
+        return None
+    
+    if isinstance(sample_differences, str):
+        try:
+            sample_differences = json.loads(sample_differences)
+        except (json.JSONDecodeError, TypeError):
+            return sample_differences
+    
+    # Only transform primary_key mode with new format
+    if not isinstance(sample_differences, dict) or sample_differences.get("mode") != "primary_key":
+        return sample_differences
+    
+    samples = sample_differences.get("samples", [])
+    if not samples or not isinstance(samples[0], dict):
+        return sample_differences
+    
+    # Detect NEW format by presence of ".system" key
+    if ".system" not in samples[0]:
+        return sample_differences  # Already in old format
+    
+    pk_columns = sample_differences.get("pk_columns", [])
+    
+    # Group rows by PK, pair source/target
+    grouped: dict[str, dict] = {}
+    system_names: list[str] = []
+    for row in samples:
+        system = row.get(".system", "")
+        if system and system not in system_names:
+            system_names.append(system)
+        pk_key = "|".join(str(row.get(pk, "")) for pk in pk_columns)
+        if pk_key not in grouped:
+            grouped[pk_key] = {"pk": {pk: row.get(pk) for pk in pk_columns}, "source": None, "target": None}
+        if len(system_names) >= 1 and system == system_names[0]:
+            grouped[pk_key]["source"] = row
+        else:
+            grouped[pk_key]["target"] = row
+    
+    # Build legacy format
+    legacy_samples = []
+    for pk_key, data in grouped.items():
+        src, tgt = data["source"], data["target"]
+        if not src or not tgt:
+            continue
+        differences = []
+        for col in src.keys():
+            if col in (".system", *pk_columns):
+                continue
+            differences.append({
+                "column": col,
+                "source_value": src.get(col),
+                "target_value": tgt.get(col)
+            })
+        legacy_samples.append({"pk": data["pk"], "differences": differences})
+    
+    return {
+        "mode": "primary_key",
+        "pk_columns": pk_columns,
+        "samples": legacy_samples
+    }
+
 @api.get("/validation-history")
 async def list_validation_history(
     entity_type: Optional[str] = None,
@@ -1075,7 +1151,12 @@ async def list_validation_history(
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """, *params, limit, offset)
     
-    return [dict(r) for r in rows]
+    results = []
+    for r in rows:
+        d = dict(r)
+        d["sample_differences"] = _transform_pk_samples_to_legacy(d.get("sample_differences"))
+        results.append(d)
+    return results
 
 @api.get("/validation-history/{id}")
 async def get_validation_detail(id: int):
@@ -1083,7 +1164,9 @@ async def get_validation_detail(id: int):
     row = await fetchrow("SELECT * FROM control.validation_history WHERE id=$1", id)
     if not row:
         raise HTTPException(status_code=404, detail="Validation not found")
-    return dict(row)
+    result = dict(row)
+    result["sample_differences"] = _transform_pk_samples_to_legacy(result.get("sample_differences"))
+    return result
 
 @api.get("/validation-history/entity/{entity_type}/{entity_id}/latest")
 async def get_latest_validation(entity_type: str, entity_id: int):
@@ -1100,7 +1183,9 @@ async def get_latest_validation(entity_type: str, entity_id: int):
     
     if not row:
         return None
-    return dict(row)
+    result = dict(row)
+    result["sample_differences"] = _transform_pk_samples_to_legacy(result.get("sample_differences"))
+    return result
 
 @api.post("/validation-history")
 async def create_validation_history(body: dict):
