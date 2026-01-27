@@ -334,7 +334,7 @@ history_id: int | None = history_response.get("id") if history_response else Non
 # Handle row count mismatch for except_all mode
 if compare_mode == "except_all" and not result["row_count_match"] and history_id:
     print("Running except_all count analysis...")
-    from analysis_utils import run_except_all_count_analysis
+    from exceptall_analysis import run_except_all_count_analysis
     except_all_count_analysis = run_except_all_count_analysis(result)
     if except_all_count_analysis:
         # Overwrite sample_differences with the full analysis (contains samples + column analysis)
