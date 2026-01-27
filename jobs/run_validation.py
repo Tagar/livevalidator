@@ -147,7 +147,11 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
     diff_count: int = diff_df.count()
     
     if diff_count == 0:
-        sample_differences = {"mode": mode, "data": {"samples": []}} if mode == "except_all" else []
+        # Wrap in mode/data structure
+        if mode == "except_all":
+            sample_differences = {"mode": "except_all", "data": {"samples": []}}
+        else:
+            sample_differences = {"mode": "primary_key", "data": {"samples": []}}
         return {"rows_different": 0, "sample_differences": sample_differences}
 
     # Try unicode downgrade if enabled
@@ -159,7 +163,11 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
         diff_count = diff_df.count()
         
         if diff_count == 0:
-            sample_differences = {"mode": mode, "data": {"samples": []}} if mode == "except_all" else []
+            # Wrap in mode/data structure
+            if mode == "except_all":
+                sample_differences = {"mode": "except_all", "data": {"samples": []}}
+            else:
+                sample_differences = {"mode": "primary_key", "data": {"samples": []}}
             return {"rows_different": 0, "sample_differences": sample_differences}
     
     print(f"Found {diff_count} differences, extracting sample")
@@ -168,7 +176,7 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
     sample_df: DataFrame = diff_df.limit(10)
     sample_dicts: list[dict] = [row.asDict() for row in sample_df.collect()]
     
-    # Wrap in mode/data structure for except_all, leave as-is for PK (will be post-processed)
+    # Wrap in mode/data structure
     if mode == "except_all":
         sample_differences = {
             "mode": "except_all",
@@ -177,7 +185,13 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
             }
         }
     else:
-        sample_differences = sample_dicts  # PK mode - will be wrapped by run_pk_analysis()
+        # PK mode - wrap simple format, post-processing will replace with detailed analysis
+        sample_differences = {
+            "mode": "primary_key",
+            "data": {
+                "samples": sample_dicts
+            }
+        }
     
     return {
         "rows_different": diff_count,
