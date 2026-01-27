@@ -85,7 +85,7 @@ def read_count(
     is_databricks: bool = conn["system"]["kind"] == "Databricks"
 
     if query:
-        count_query = f"SELECT COUNT(*) as cnt FROM ({query}) _subq"
+        count_query = f"SELECT COUNT(*) as cnt FROM ({query.replace(';','')}) _subq"
     else:
         tbl = f"`{conn['catalog']}`.{table}" if is_databricks else table
         where = f" WHERE {watermark_expr}" if watermark_expr else ""
