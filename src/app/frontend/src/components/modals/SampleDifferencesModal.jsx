@@ -261,8 +261,18 @@ export function SampleDifferencesModal({ validation, onClose }) {
   
   // For except_all with row count mismatch, determine which view to show based on _modalMode
   const modalMode = validation._modalMode || 'auto';
-  const showUnifiedSamples = isExceptAllRowCountMismatch && modalMode === 'diffs';
-  const showColumnAnalysisOnly = isExceptAllRowCountMismatch && modalMode === 'row_count';
+  
+  // Handle except_all with row count mismatch - respect _modalMode for BOTH 'row_count_mismatch_except_all' AND 'except_all_bidirectional' when row counts don't match
+  const hasRowCountMismatch = !validation.row_count_match && validation.compare_mode === 'except_all';
+  const hasColumnAnalysis = samples?.column_differences !== undefined;
+  const canShowModalModeViews = (isExceptAllRowCountMismatch || (isExceptAllBidirectional && hasRowCountMismatch));
+  
+  const showUnifiedSamples = canShowModalModeViews && modalMode === 'diffs';
+  const showColumnAnalysisOnly = canShowModalModeViews && modalMode === 'row_count' && hasColumnAnalysis;
+  const showBidirectionalOnly = isExceptAllBidirectional && !hasRowCountMismatch;
+  
+  // If user clicks "Row count" but column analysis isn't ready, show the full view instead
+  const showFullViewAsFallback = canShowModalModeViews && modalMode === 'row_count' && !hasColumnAnalysis;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
@@ -279,7 +289,7 @@ export function SampleDifferencesModal({ validation, onClose }) {
         <div className="flex justify-between items-start mb-3">
           <div>
             <h3 className="text-lg font-bold text-rust-light">
-              {showColumnAnalysisOnly ? 'Column Analysis' : 'Sample Differences'}
+              {showColumnAnalysisOnly ? 'Column Analysis' : showFullViewAsFallback ? 'Sample Differences (Column Analysis Pending)' : 'Sample Differences'}
             </h3>
             <p className="text-gray-400 text-xs mt-1">
               {validation.entity_name} • {validation.compare_mode} mode
@@ -319,8 +329,20 @@ export function SampleDifferencesModal({ validation, onClose }) {
           {isRowCountMismatch && <RowCountMismatchView samples={samples} validation={validation} />}
           {showUnifiedSamples && <ExceptAllUnifiedSamplesView analysis={samples} validation={validation} />}
           {showColumnAnalysisOnly && <ExceptAllColumnAnalysisOnlyView analysis={samples} validation={validation} />}
-          {isExceptAllRowCountMismatch && !showUnifiedSamples && !showColumnAnalysisOnly && <ExceptAllRowCountMismatchView samples={samples} validation={validation} />}
-          {isExceptAllBidirectional && <ExceptAllUnifiedSamplesView analysis={samples} validation={validation} />}
+          {showFullViewAsFallback && (
+            <div className="space-y-4">
+              <div className="p-3 bg-yellow-900/20 border border-yellow-700 rounded">
+                <p className="text-yellow-300 text-sm font-semibold">Column Analysis Processing</p>
+                <p className="text-yellow-200 text-xs mt-1">
+                  Detailed column analysis is still processing. Refresh the page to see column statistics when ready.
+                  Showing row-level differences in the meantime.
+                </p>
+              </div>
+              <ExceptAllUnifiedSamplesView analysis={samples} validation={validation} />
+            </div>
+          )}
+          {canShowModalModeViews && !showUnifiedSamples && !showColumnAnalysisOnly && !showFullViewAsFallback && <ExceptAllRowCountMismatchView samples={samples} validation={validation} />}
+          {showBidirectionalOnly && <ExceptAllUnifiedSamplesView analysis={samples} validation={validation} />}
           {isPKPending && <PKModeView samples={samples} validation={validation} />}
           {isExceptAllMode && !isPKPending && !showUnifiedSamples && <ExceptAllModeView samples={samples} validation={validation} />}
           {isExceptAllCountMismatch && (
