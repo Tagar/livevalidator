@@ -70,19 +70,19 @@ client = BackendAPIClient(backend_api_url=backend_api_url)
 
 print(f"Starting: {name} (trigger_id={trigger_id or 'manual'})")
 
-# COMMAND ----------
+# COMMAND ---------- EXACTLY AS IT APPEARS IN MAIN
+# DBTITLE 1,Schema and Count Validation
 
 def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
-    """Compare column names"""
+    """Compare column names between source and target"""
     src_cols: set[str] = set(c for c in src_df.columns if c not in exclude)
     tgt_cols: set[str] = set(c for c in tgt_df.columns if c not in exclude)
     
-    if src_cols == tgt_cols:
-        print(f"\tSchema matches, {len(src_cols)} columns")
-    else:
-        print(f"\tSchema does not match, source: {len(src_cols)} != target: {len(tgt_cols)} columns")
+    match: bool = src_cols == tgt_cols
+    print(f"\tSchema {'matches' if match else 'does not match'}, source: {len(src_cols)}, target: {len(tgt_cols)} columns")
+    
     return {
-        "schema_match": src_cols == tgt_cols,
+        "schema_match": match,
         "schema_details": {
             "columns_matched": list(src_cols & tgt_cols),
             "columns_missing": list(src_cols - tgt_cols),
