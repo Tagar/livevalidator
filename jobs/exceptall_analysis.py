@@ -4,74 +4,34 @@ from pyspark.sql import DataFrame
 from analysis_utils import summarize_df
 
 
-def bidirectional_samples(src_df: DataFrame, tgt_df: DataFrame) -> dict:
-    """
-    Get bidirectional except_all samples using cached dataframes.
-    
-    Args:
-        src_df: Cached source dataframe from validation run
-        tgt_df: Cached target dataframe from validation run
-    
-    Returns:
-        Dict with in_source_not_target and in_target_not_source counts and samples
-    """
-    # Source not in target
-    in_source_not_target_df = src_df.exceptAll(tgt_df)
-    in_source_not_target_count = in_source_not_target_df.count()
-    in_source_not_target_samples = [r.asDict() for r in in_source_not_target_df.limit(10).collect()]
-    
-    # Target not in source
-    in_target_not_source_df = tgt_df.exceptAll(src_df)
-    in_target_not_source_count = in_target_not_source_df.count()
-    in_target_not_source_samples = [r.asDict() for r in in_target_not_source_df.limit(10).collect()]
-    
-    return {
-        "in_source_not_target": {
-            "count": in_source_not_target_count,
-            "samples": in_source_not_target_samples
-        },
-        "in_target_not_source": {
-            "count": in_target_not_source_count,
-            "samples": in_target_not_source_samples
-        }
-    }
-
-
 def run_except_all_count_analysis(result: dict) -> dict | None:
     """
     Analyze row count mismatch for except_all mode.
-    
+
     Compares summary statistics between source and target tables,
-    showing only columns where stats differ. Uses bidirectional except_all
-    to get samples from both directions.
-    
+    showing only columns where stats differ. Reuses already-computed
+    "in source not in target" results and adds "in target not in source".
+
     Args:
         result: Validation result dict containing src_df, tgt_df,
-                row_count_source, row_count_target, source_was_limited
-    
+                row_count_source, row_count_target, rows_different,
+                sample_differences (already computed in source not in target direction)
+
     Returns:
         Analysis dict with mode/data structure, or None if not applicable
     """
     src_df: DataFrame = result.get("src_df")
     tgt_df: DataFrame = result.get("tgt_df")
-    source_was_limited: bool = result.get("source_was_limited", False)
     row_count_source: int = result.get("row_count_source", 0)
     row_count_target: int = result.get("row_count_target", 0)
     rows_different: int = result.get("rows_different", 0)
     
+    # Extract already-computed "in source not in target" samples
+    existing_samples: dict = result.get("sample_differences", {})
+    in_source_not_target_samples: list = existing_samples.get("data", {}).get("samples", [])
+
     if not all([src_df, tgt_df]):
         return None
-    
-    # Skip if source was limited and source < target (unreliable results)
-    if source_was_limited and row_count_source < row_count_target:
-        print("Skipping analysis: source was limited and source_count < target_count")
-        return {
-            "mode": "row_count_mismatch_except_all",
-            "data": {
-                "skipped": True,
-                "reason": "source_limited_and_fewer"
-            }
-        }
     
     print("Analyzing column statistics for except_all row count mismatch...")
     
@@ -132,11 +92,14 @@ def run_except_all_count_analysis(result: dict) -> dict | None:
     
     print(f"Found {len(column_differences)} columns with differing statistics")
     
-    # Get bidirectional except_all samples using cached dataframes
-    samples = bidirectional_samples(src_df, tgt_df)
+    # Reuse already-computed "in source not in target" (from initial validation)
+    # Only compute the reverse direction: "in target not in source"
+    in_target_not_source_df = tgt_df.exceptAll(src_df)
+    in_target_not_source_count = in_target_not_source_df.count()
+    in_target_not_source_samples = [r.asDict() for r in in_target_not_source_df.limit(10).collect()]
     
-    print(f"In source not in target: {rows_different} rows")
-    print(f"In target not in source: {samples['in_target_not_source']['count']} rows")
+    print(f"In source not in target: {rows_different} rows (reused from initial validation)")
+    print(f"In target not in source: {in_target_not_source_count} rows")
     
     return {
         "mode": "row_count_mismatch_except_all",
@@ -146,11 +109,11 @@ def run_except_all_count_analysis(result: dict) -> dict | None:
             "column_differences": column_differences,
             "in_source_not_target": {
                 "count": rows_different,
-                "samples": samples["in_source_not_target"]["samples"][:10]
+                "samples": in_source_not_target_samples[:10]  # Reuse from initial validation
             },
             "in_target_not_source": {
-                "count": samples["in_target_not_source"]["count"],
-                "samples": samples["in_target_not_source"]["samples"][:10]
+                "count": in_target_not_source_count,
+                "samples": in_target_not_source_samples[:10]
             }
         }
     }
