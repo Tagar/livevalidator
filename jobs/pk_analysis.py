@@ -25,7 +25,7 @@ def compare_pk_samples(
         target_system_name: Name of target system
     
     Returns:
-        List of mismatch dicts with .system key, or None if row counts don't match
+        List of mismatch dicts with pk/differences structure, or None if row counts don't match
     """
     if len(src_rows) != len(tgt_rows):
         return None
@@ -35,14 +35,29 @@ def compare_pk_samples(
         sorted(tgt_rows, key=lambda item: [item[pk] for pk in pk_columns])
     )
     
-    return [
-        {**{pk: src[pk] for pk in pk_columns}, **item}
-        for src, tgt in zipped_samples
-        for item in [
-            {".system": source_system_name, **{k: v for k, v in src.items() if v != tgt[k]}},
-            {".system": target_system_name, **{k: tgt[k] for k, v in src.items() if v != tgt[k]}}
-        ]
-    ]
+    result = []
+    for src, tgt in zipped_samples:
+        # Extract PK values
+        pk_dict = {pk: src[pk] for pk in pk_columns}
+        
+        # Find differing columns (excluding PK columns)
+        differences = []
+        for col in src.keys():
+            if col not in pk_columns and src.get(col) != tgt.get(col):
+                differences.append({
+                    "column": col,
+                    "source_value": src.get(col),
+                    "target_value": tgt.get(col)
+                })
+        
+        # Only include if there are actual differences
+        if differences:
+            result.append({
+                "pk": pk_dict,
+                "differences": differences
+            })
+    
+    return result
 
 
 def null_safe_join(lhs: DataFrame, rhs: DataFrame, keys: list[str], how: str = "inner") -> DataFrame:
