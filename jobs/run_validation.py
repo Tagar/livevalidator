@@ -70,7 +70,7 @@ client = BackendAPIClient(backend_api_url=backend_api_url)
 
 print(f"Starting: {name} (trigger_id={trigger_id or 'manual'})")
 
-# COMMAND ---------- EXACTLY AS IT APPEARS IN MAIN
+# COMMAND ----------
 # DBTITLE 1,Schema and Count Validation
 
 def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
@@ -146,12 +146,7 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
     diff_count: int = diff_df.count()
     
     if diff_count == 0:
-        # Wrap in mode/data structure
-        if mode == "except_all":
-            sample_differences = {"mode": "except_all", "data": {"samples": []}}
-        else:
-            sample_differences = {"mode": "primary_key", "data": {"samples": []}}
-        return {"rows_different": 0, "sample_differences": sample_differences}
+        return {"rows_different": 0, "sample_differences": []}
 
     # Try unicode downgrade if enabled
     if downgrade_unicode_enabled:
@@ -162,39 +157,15 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
         diff_count = diff_df.count()
         
         if diff_count == 0:
-            # Wrap in mode/data structure
-            if mode == "except_all":
-                sample_differences = {"mode": "except_all", "data": {"samples": []}}
-            else:
-                sample_differences = {"mode": "primary_key", "data": {"samples": []}}
-            return {"rows_different": 0, "sample_differences": sample_differences}
+            return {"rows_different": 0, "sample_differences": []}
     
     print(f"Found {diff_count} differences, extracting sample")
-    
-    # Return simple sample format - bidirectional analysis will happen in post-processing
     sample_df: DataFrame = diff_df.limit(10)
     sample_dicts: list[dict] = [row.asDict() for row in sample_df.collect()]
     
-    # Wrap in mode/data structure
-    if mode == "except_all":
-        sample_differences = {
-            "mode": "except_all",
-            "data": {
-                "samples": sample_dicts
-            }
-        }
-    else:
-        # PK mode - wrap simple format, post-processing will replace with detailed analysis
-        sample_differences = {
-            "mode": "primary_key",
-            "data": {
-                "samples": sample_dicts
-            }
-        }
-    
     return {
         "rows_different": diff_count,
-        "sample_differences": sample_differences,
+        "sample_differences": sample_dicts,
         "src_df": src_filtered,
         "tgt_df": tgt_filtered,
         "sample_df": sample_df
@@ -285,15 +256,8 @@ try:
         result.update(row_result)
         result["rows_matched"] = max(result["rows_compared"] - result["rows_different"], 0)
     else:
-        # Row count mismatch - for except_all mode, still run comparison to get diffs
-        if compare_mode == "except_all":
-            print(f"Row counts don't match, but running except_all comparison anyway...")
-            row_result: dict = validate_rows(src_df, tgt_df, exclude_columns, compare_mode)
-            result.update(row_result)
-            result["rows_matched"] = None  # Not meaningful when counts don't match
-        else:
-            # PK mode: skip row validation, keep dataframes for PK analysis
-            result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None})
+        # if the row count match failed, we need to keep the dataframes for post analysis
+        result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None})
 
     # Step 7: Determine final status
     if result["rows_different"] == 0:
@@ -385,4 +349,4 @@ sample_df.display()
 pk_sample_differences: dict | None = run_pk_analysis(result)
 if pk_sample_differences:
     client.api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": pk_sample_differences})
-    print(f"Updated validation history {history_id} with PK analysis ({len(pk_sample_differences['data']['samples'])} samples)")
+    print(f"Updated validation history {history_id} with PK analysis ({len(pk_sample_differences['samples'])} samples)")

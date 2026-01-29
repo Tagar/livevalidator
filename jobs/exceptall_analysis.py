@@ -25,11 +25,11 @@ def run_except_all_count_analysis(result: dict) -> dict | None:
     source_was_limited: bool = result.get("source_was_limited", False)
     row_count_source: int = result.get("row_count_source", 0)
     row_count_target: int = result.get("row_count_target", 0)
+    row_count_match: int = result.get("row_count_match", False)
     rows_different: int = result.get("rows_different", 0)
     
     # Extract already-computed "in source not in target" samples
-    existing_samples: dict = result.get("sample_differences", {})
-    in_source_not_target_samples: list = existing_samples.get("data", {}).get("samples", [])
+    in_source_not_target_samples: list = result.get("sample_differences", {})
 
     if not all([src_df, tgt_df]):
         return None
@@ -104,8 +104,17 @@ def run_except_all_count_analysis(result: dict) -> dict | None:
     
     print(f"Found {len(column_differences)} columns with differing statistics")
     
-    # Reuse already-computed "in source not in target" (from initial validation)
-    # Only compute the reverse direction: "in target not in source"
+    # if the row count match failed, we need to run the validation to get the diffs
+    if not row_count_match:
+        row_result: dict = validate_rows(src_df, tgt_df, exclude_columns, compare_mode)
+        rows_different = row_result["rows_different"]
+        src_df = row_result["src_df"]
+        tgt_df = row_result["tgt_df"]
+        in_source_not_target_samples = row_result["sample_differences"]
+
+        result.update(row_result)
+
+    # compute "in target not in source"
     in_target_not_source_df = tgt_df.exceptAll(src_df)
     in_target_not_source_count = in_target_not_source_df.count()
     in_target_not_source_samples = [r.asDict() for r in in_target_not_source_df.limit(10).collect()]
