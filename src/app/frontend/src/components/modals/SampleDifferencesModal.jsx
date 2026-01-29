@@ -1311,6 +1311,19 @@ function PKModeView({ data, validation }) {
     );
   }
   
+  // Check if samples are in simple format (no .pk field) - post-processing not complete yet
+  const firstSample = data.samples[0];
+  if (!firstSample.pk) {
+    return (
+      <div className="p-4 bg-yellow-900/20 border border-yellow-700 rounded-lg">
+        <p className="text-yellow-300 text-sm font-semibold">Analysis Processing</p>
+        <p className="text-yellow-200 text-xs mt-2">
+          Detailed PK analysis is being computed. This page will update automatically when complete.
+        </p>
+      </div>
+    );
+  }
+  
   const { pk_columns, samples: pkSamples } = data;
   
   return (
