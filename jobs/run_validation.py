@@ -74,19 +74,47 @@ print(f"Starting: {name} (trigger_id={trigger_id or 'manual'})")
 # DBTITLE 1,Schema and Count Validation
 
 def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
-    """Compare column names between source and target"""
+    """Compare column names and data types between source and target"""
     src_cols: set[str] = set(c for c in src_df.columns if c not in exclude)
     tgt_cols: set[str] = set(c for c in tgt_df.columns if c not in exclude)
     
-    match: bool = src_cols == tgt_cols
-    print(f"\tSchema {'matches' if match else 'does not match'}, source: {len(src_cols)}, target: {len(tgt_cols)} columns")
+    # Check column names
+    names_match: bool = src_cols == tgt_cols
+    
+    # Check data types for matching columns
+    type_mismatches = []
+    if names_match:
+        src_schema_dict = {field.name: field.dataType for field in src_df.schema.fields if field.name not in exclude}
+        tgt_schema_dict = {field.name: field.dataType for field in tgt_df.schema.fields if field.name not in exclude}
+        
+        for col_name in src_cols:
+            src_type = str(src_schema_dict[col_name])
+            tgt_type = str(tgt_schema_dict[col_name])
+            if src_type != tgt_type:
+                type_mismatches.append({
+                    "column": col_name,
+                    "source_type": src_type,
+                    "target_type": tgt_type
+                })
+    
+    match: bool = names_match and len(type_mismatches) == 0
+    
+    if not names_match:
+        print(f"\tSchema does not match, source: {len(src_cols)}, target: {len(tgt_cols)} columns")
+    elif type_mismatches:
+        print(f"\tSchema does not match, {len(type_mismatches)} column(s) have different data types")
+        for tm in type_mismatches:
+            print(f"\t  - {tm['column']}: {tm['source_type']} → {tm['target_type']}")
+    else:
+        print(f"\tSchema matches, {len(src_cols)} columns")
     
     return {
         "schema_match": match,
         "schema_details": {
             "columns_matched": list(src_cols & tgt_cols),
             "columns_missing": list(src_cols - tgt_cols),
-            "columns_extra": list(tgt_cols - src_cols)
+            "columns_extra": list(tgt_cols - src_cols),
+            "type_mismatches": type_mismatches
         }
     }
 
@@ -260,8 +288,15 @@ try:
         result.update(row_result)
         result["rows_matched"] = max(result["rows_compared"] - result["rows_different"], 0)
     else:
-        # if the row count match failed, we need to keep the dataframes for post analysis
-        result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None})
+        # Row count mismatch - for except_all mode, still run comparison to get diffs
+        if compare_mode == "except_all":
+            print(f"Row counts don't match, but running except_all comparison anyway...")
+            row_result: dict = validate_rows(src_df, tgt_df, exclude_columns, compare_mode)
+            result.update(row_result)
+            result["rows_matched"] = None  # Not meaningful when counts don't match
+        else:
+            # PK mode: skip row validation, keep dataframes for PK analysis
+            result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None})
 
     # Step 7: Determine final status
     if result["rows_different"] == 0:
@@ -309,6 +344,19 @@ if result["status"] == "succeeded":
     dbutils.notebook.exit("Validation passed")
 
 history_id: int | None = history_response.get("id") if history_response else None
+
+# COMMAND ----------
+
+# Handle row count mismatch for except_all mode
+if compare_mode == "except_all" and not result["row_count_match"] and history_id:
+    print("Running except_all count analysis...")
+    from pk_analysis import run_except_all_count_analysis
+    except_all_count_analysis = run_except_all_count_analysis(result)
+    if except_all_count_analysis:
+        # Overwrite sample_differences with the full analysis (contains samples + column analysis)
+        api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": except_all_count_analysis})
+        print(f"Updated validation history {history_id} with except_all count analysis")
+    dbutils.notebook.exit("Validation failed - Row count mismatch")
 
 # COMMAND ----------
 

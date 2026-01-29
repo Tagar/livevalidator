@@ -252,10 +252,16 @@ export function SampleDifferencesModal({ validation, onClose }) {
   
   const isPKMode = samples?.mode === 'primary_key';
   const isRowCountMismatch = samples?.mode === 'row_count_mismatch';
-  const isExceptAllMode = Array.isArray(samples) && samples.length > 0;
+  const isExceptAllRowCountMismatch = samples?.mode === 'row_count_mismatch_except_all';
+  const isExceptAllMode = Array.isArray(samples);
   const isPKPending = validation.compare_mode === 'primary_key' && isExceptAllMode;
-  const isExceptAllCountMismatch = validation.compare_mode === 'except_all' && !validation.row_count_match && !isExceptAllMode;
+  const isExceptAllCountMismatch = validation.compare_mode === 'except_all' && !validation.row_count_match && !isExceptAllMode && !isExceptAllRowCountMismatch;
   const isPKCountPending = validation.compare_mode === 'primary_key' && !validation.row_count_match && !isRowCountMismatch;
+  
+  // For except_all with row count mismatch, determine which view to show based on _modalMode
+  const modalMode = validation._modalMode || 'auto';
+  const showUnifiedSamples = isExceptAllRowCountMismatch && modalMode === 'diffs';
+  const showColumnAnalysisOnly = isExceptAllRowCountMismatch && modalMode === 'row_count';
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
@@ -272,7 +278,7 @@ export function SampleDifferencesModal({ validation, onClose }) {
         <div className="flex justify-between items-start mb-3">
           <div>
             <h3 className="text-lg font-bold text-rust-light">
-              Sample Differences
+              {showColumnAnalysisOnly ? 'Column Analysis' : 'Sample Differences'}
             </h3>
             <p className="text-gray-400 text-xs mt-1">
               {validation.entity_name} • {validation.compare_mode} mode
@@ -310,8 +316,11 @@ export function SampleDifferencesModal({ validation, onClose }) {
         <div className="flex-1 overflow-auto">
           {isPKMode && <PKModeView samples={samples} validation={validation} />}
           {isRowCountMismatch && <RowCountMismatchView samples={samples} validation={validation} />}
-          {isPKPending && <PKPendingView samples={samples} validation={validation} />}
-          {isExceptAllMode && !isPKPending && <ExceptAllModeView samples={samples} validation={validation} />}
+          {showUnifiedSamples && <ExceptAllUnifiedSamplesView analysis={samples} validation={validation} />}
+          {showColumnAnalysisOnly && <ExceptAllColumnAnalysisOnlyView analysis={samples} validation={validation} />}
+          {isExceptAllRowCountMismatch && !showUnifiedSamples && !showColumnAnalysisOnly && <ExceptAllRowCountMismatchView samples={samples} validation={validation} />}
+          {isPKPending && <PKModeView samples={samples} validation={validation} />}
+          {isExceptAllMode && !isPKPending && !showUnifiedSamples && <ExceptAllModeView samples={samples} validation={validation} />}
           {isExceptAllCountMismatch && (
             <div className="p-4 bg-charcoal-400 border border-charcoal-300 rounded-lg">
               <p className="text-gray-300 mb-2">
@@ -339,7 +348,7 @@ export function SampleDifferencesModal({ validation, onClose }) {
               </p>
             </div>
           )}
-          {!isPKMode && !isRowCountMismatch && !isExceptAllMode && !isExceptAllCountMismatch && !isPKCountPending && (
+          {!isPKMode && !isRowCountMismatch && !isExceptAllRowCountMismatch && !isExceptAllMode && !isExceptAllCountMismatch && !isPKCountPending && (
             <p className="text-gray-400">No sample data available</p>
           )}
         </div>
@@ -717,6 +726,529 @@ function RowCountMismatchView({ samples, validation }) {
         pkColumns={pkColumns}
         defaultExpanded={missing_in_target?.count === 0}
       />
+    </div>
+  );
+}
+
+/**
+ * Display ONLY unified samples for except_all row count mismatch (for Diffs popup)
+ */
+function ExceptAllUnifiedSamplesView({ analysis, validation }) {
+  const [showSource, setShowSource] = useState(true);
+  const [showTarget, setShowTarget] = useState(true);
+  
+  const { 
+    source_row_count, 
+    target_row_count, 
+    in_source_not_target, 
+    in_target_not_source 
+  } = analysis;
+  
+  const sourceTable = validation.source_table || 'SOURCE_TABLE';
+  const targetTable = validation.target_table || 'TARGET_TABLE';
+  
+  // Combine samples with direction flag
+  const sourceSamples = (in_source_not_target?.samples || []).map(row => ({ ...row, _direction: 'source' }));
+  const targetSamples = (in_target_not_source?.samples || []).map(row => ({ ...row, _direction: 'target' }));
+  const allSamples = [...sourceSamples, ...targetSamples];
+  
+  // Filter samples based on selected filters
+  const filteredSamples = allSamples.filter(row => {
+    if (row._direction === 'source') return showSource;
+    if (row._direction === 'target') return showTarget;
+    return true;
+  });
+  
+  const sourceCount = in_source_not_target?.count || 0;
+  const targetCount = in_target_not_source?.count || 0;
+  
+  // Get columns (excluding our internal _direction flag)
+  const columns = allSamples.length > 0 ? Object.keys(allSamples[0]).filter(k => k !== '_direction') : [];
+  
+  // Generate bulk SQL for all source rows
+  const generateBulkSourceSql = () => {
+    if (sourceCount === 0) return '';
+    const pkCols = sourceSamples.map(row => {
+      const conditions = Object.entries(row)
+        .filter(([k]) => k !== '_direction')
+        .map(([col, val]) => `${col} = ${typeof val === 'string' ? `'${val}'` : val}`)
+        .join(' AND ');
+      return `(${conditions})`;
+    }).join(' OR ');
+    return `SELECT * FROM ${sourceTable} WHERE ${pkCols};`;
+  };
+  
+  // Generate bulk SQL for all target rows
+  const generateBulkTargetSql = () => {
+    if (targetCount === 0) return '';
+    const pkCols = targetSamples.map(row => {
+      const conditions = Object.entries(row)
+        .filter(([k]) => k !== '_direction')
+        .map(([col, val]) => `${col} = ${typeof val === 'string' ? `'${val}'` : val}`)
+        .join(' AND ');
+      return `(${conditions})`;
+    }).join(' OR ');
+    return `SELECT * FROM ${targetTable} WHERE ${pkCols};`;
+  };
+  
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+  };
+  
+  return (
+    <div className="space-y-4">
+      {/* Unified Sample Rows Section */}
+      {allSamples.length > 0 && (
+        <div className="border border-charcoal-300 rounded-lg overflow-hidden">
+          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300 flex items-center justify-between">
+            <div>
+              <span className="text-gray-300 font-semibold text-sm">Sample Rows</span>
+              <span className="text-gray-500 text-xs ml-2">
+                <button
+                  onClick={() => setShowSource(!showSource)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                    showSource 
+                      ? 'bg-blue-900/30 hover:bg-blue-900/40' 
+                      : 'opacity-50 hover:opacity-70'
+                  }`}
+                  title={showSource ? 'Click to hide source rows' : 'Click to show source rows'}
+                >
+                  <span className="inline-block w-2 h-2 bg-blue-500 rounded"></span>
+                  {sourceCount} in source only
+                </button>
+                <span className="mx-1.5">•</span>
+                <button
+                  onClick={() => setShowTarget(!showTarget)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                    showTarget 
+                      ? 'bg-purple-900/30 hover:bg-purple-900/40' 
+                      : 'opacity-50 hover:opacity-70'
+                  }`}
+                  title={showTarget ? 'Click to hide target rows' : 'Click to show target rows'}
+                >
+                  <span className="inline-block w-2 h-2 bg-purple-500 rounded"></span>
+                  {targetCount} in target only
+                </button>
+              </span>
+            </div>
+            
+            {/* Bulk SQL Buttons */}
+            <div className="flex gap-2">
+              {sourceCount > 0 && (
+                <button
+                  onClick={() => copyToClipboard(generateBulkSourceSql())}
+                  className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                  title="Copy SQL for all source rows"
+                >
+                  Copy SQL - All Source ({sourceCount})
+                </button>
+              )}
+              {targetCount > 0 && (
+                <button
+                  onClick={() => copyToClipboard(generateBulkTargetSql())}
+                  className="px-2 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+                  title="Copy SQL for all target rows"
+                >
+                  Copy SQL - All Target ({targetCount})
+                </button>
+              )}
+            </div>
+          </div>
+          
+          <div className="p-3">
+            <div className="overflow-x-auto">
+              <table className="w-full border border-charcoal-300 rounded text-xs">
+                <thead className="bg-charcoal-400">
+                  <tr>
+                    <th className="px-2 py-1.5 w-14 border-r border-charcoal-300"></th>
+                    <th className="px-2 py-1.5 w-20 border-r border-charcoal-300 text-left text-gray-300">Source</th>
+                    {columns.map(col => (
+                      <th key={col} className="px-2 py-1.5 text-left font-semibold text-gray-300 border-r border-charcoal-300 last:border-r-0">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSamples.map((row, idx) => {
+                    const isSource = row._direction === 'source';
+                    const tableName = isSource ? sourceTable : targetTable;
+                    const rowData = { ...row };
+                    delete rowData._direction;
+                    
+                    return (
+                      <tr 
+                        key={idx} 
+                        className={`border-t border-charcoal-300 ${
+                          isSource ? 'bg-blue-900/10' : 'bg-purple-900/10'
+                        }`}
+                      >
+                        <td className="px-2 py-1.5 border-r border-charcoal-300 text-center">
+                          <CopySqlButton tableName={tableName} row={rowData} />
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-charcoal-300">
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                            isSource ? 'text-blue-300' : 'text-purple-300'
+                          }`}>
+                            <span className={`inline-block w-2 h-2 rounded ${
+                              isSource ? 'bg-blue-500' : 'bg-purple-500'
+                            }`}></span>
+                            {isSource ? 'SRC' : 'TGT'}
+                          </span>
+                        </td>
+                        {columns.map(col => (
+                          <td key={col} className="px-2 py-1.5 font-mono text-gray-200 border-r border-charcoal-300 last:border-r-0">
+                            <ExpandableCell value={row[col]} />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Display ONLY column analysis for except_all row count mismatch (for Row Count popup)
+ */
+function ExceptAllColumnAnalysisOnlyView({ analysis, validation }) {
+  const { 
+    source_row_count, 
+    target_row_count, 
+    column_differences
+  } = analysis;
+  
+  return (
+    <div className="space-y-4">
+      {/* Header info */}
+      <div className="p-2 bg-orange-900/20 border border-orange-700 rounded">
+        <p className="text-orange-300 text-xs">
+          Row count mismatch: Source has {source_row_count?.toLocaleString()} rows, 
+          Target has {target_row_count?.toLocaleString()} rows 
+          (diff: {Math.abs((source_row_count || 0) - (target_row_count || 0)).toLocaleString()})
+        </p>
+      </div>
+      
+      {/* Column Analysis Section */}
+      {column_differences && column_differences.length > 0 && (
+        <div className="border border-charcoal-300 rounded-lg overflow-hidden">
+          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300">
+            <span className="text-gray-300 font-semibold text-sm">
+              Columns of Interest • <span className="text-gray-500">Showing {column_differences.length} column{column_differences.length !== 1 ? 's' : ''} with differing statistics</span>
+            </span>
+          </div>
+          
+          <div className="p-3">
+            <div className="overflow-x-auto">
+              <table className="w-full border border-charcoal-300 rounded text-xs">
+                <thead className="bg-charcoal-400">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-gray-400 border-r border-charcoal-300">Column</th>
+                    <th className="px-3 py-2 text-left text-blue-300 border-r border-charcoal-300">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 bg-blue-500 rounded"></span>
+                        Source
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-left text-purple-300">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 bg-purple-500 rounded"></span>
+                        Target
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {column_differences.map((diff, idx) => {
+                    const formatStats = (col) => {
+                      if (!col) return <span className="text-red-400 italic">Missing</span>;
+                      if (col.type === 'string') {
+                        return (
+                          <div className="space-y-0.5">
+                            <div><span className="text-gray-500">Type:</span> <span className="font-mono">{col.type}</span></div>
+                            <div><span className="text-gray-500">Unique:</span> {col.cardinality}</div>
+                            <div><span className="text-gray-500">Nulls:</span> {col.nulls}</div>
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <div className="space-y-0.5">
+                            <div><span className="text-gray-500">Type:</span> <span className="font-mono">{col.type}</span></div>
+                            <div><span className="text-gray-500">Range:</span> {col.min} → {col.max}</div>
+                            <div><span className="text-gray-500">Nulls:</span> {col.nulls}</div>
+                          </div>
+                        );
+                      }
+                    };
+                    
+                    return (
+                      <tr key={idx} className="border-t border-charcoal-300">
+                        <td className="px-3 py-2 font-mono text-gray-300 border-r border-charcoal-300 align-top">
+                          {diff.column}
+                        </td>
+                        <td className="px-3 py-2 text-blue-200 bg-blue-900/10 border-r border-charcoal-300 align-top">
+                          {formatStats(diff.source)}
+                        </td>
+                        <td className="px-3 py-2 text-purple-200 bg-purple-900/10 align-top">
+                          {formatStats(diff.target)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Display for except_all mode with row count mismatch
+ * Shows column analysis (stats that differ) and unified sample rows from both directions
+ */
+function ExceptAllRowCountMismatchView({ samples, validation }) {
+  const { 
+    source_row_count, 
+    target_row_count, 
+    column_differences, 
+    in_source_not_target, 
+    in_target_not_source 
+  } = samples;
+  
+  const sourceTable = validation.source_table || 'SOURCE_TABLE';
+  const targetTable = validation.target_table || 'TARGET_TABLE';
+  
+  // Combine samples with direction flag
+  const sourceSamples = (in_source_not_target?.samples || []).map(row => ({ ...row, _direction: 'source' }));
+  const targetSamples = (in_target_not_source?.samples || []).map(row => ({ ...row, _direction: 'target' }));
+  const allSamples = [...sourceSamples, ...targetSamples];
+  
+  const sourceCount = in_source_not_target?.count || 0;
+  const targetCount = in_target_not_source?.count || 0;
+  
+  // Get columns (excluding our internal _direction flag)
+  const columns = allSamples.length > 0 ? Object.keys(allSamples[0]).filter(k => k !== '_direction') : [];
+  
+  // Generate bulk SQL for all source rows
+  const generateBulkSourceSql = () => {
+    if (sourceCount === 0) return '';
+    const pkCols = sourceSamples.map(row => {
+      const conditions = Object.entries(row)
+        .filter(([k]) => k !== '_direction')
+        .map(([col, val]) => `${col} = ${typeof val === 'string' ? `'${val}'` : val}`)
+        .join(' AND ');
+      return `(${conditions})`;
+    }).join(' OR ');
+    return `SELECT * FROM ${sourceTable} WHERE ${pkCols};`;
+  };
+  
+  // Generate bulk SQL for all target rows
+  const generateBulkTargetSql = () => {
+    if (targetCount === 0) return '';
+    const pkCols = targetSamples.map(row => {
+      const conditions = Object.entries(row)
+        .filter(([k]) => k !== '_direction')
+        .map(([col, val]) => `${col} = ${typeof val === 'string' ? `'${val}'` : val}`)
+        .join(' AND ');
+      return `(${conditions})`;
+    }).join(' OR ');
+    return `SELECT * FROM ${targetTable} WHERE ${pkCols};`;
+  };
+  
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+  };
+  
+  return (
+    <div className="space-y-4">
+      {/* Header info */}
+      <div className="p-2 bg-orange-900/20 border border-orange-700 rounded">
+        <p className="text-orange-300 text-xs">
+          Row count mismatch: Source has {source_row_count?.toLocaleString()} rows, 
+          Target has {target_row_count?.toLocaleString()} rows 
+          (diff: {Math.abs((source_row_count || 0) - (target_row_count || 0)).toLocaleString()})
+        </p>
+      </div>
+      
+      {/* Column Analysis Section */}
+      {column_differences && column_differences.length > 0 && (
+        <div className="border border-charcoal-300 rounded-lg overflow-hidden">
+          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300">
+            <span className="text-gray-300 font-semibold text-sm">
+              Columns of Interest • <span className="text-gray-500">Showing {column_differences.length} column{column_differences.length !== 1 ? 's' : ''} with differing statistics</span>
+            </span>
+          </div>
+          
+          <div className="p-3">
+            <div className="overflow-x-auto">
+              <table className="w-full border border-charcoal-300 rounded text-xs">
+                <thead className="bg-charcoal-400">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-gray-400 border-r border-charcoal-300">Column</th>
+                    <th className="px-3 py-2 text-left text-blue-300 border-r border-charcoal-300">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 bg-blue-500 rounded"></span>
+                        Source
+                      </div>
+                    </th>
+                    <th className="px-3 py-2 text-left text-purple-300">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2 h-2 bg-purple-500 rounded"></span>
+                        Target
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {column_differences.map((diff, idx) => {
+                    const formatStats = (col) => {
+                      if (!col) return <span className="text-red-400 italic">Missing</span>;
+                      if (col.type === 'string') {
+                        return (
+                          <div className="space-y-0.5">
+                            <div><span className="text-gray-500">Type:</span> <span className="font-mono">{col.type}</span></div>
+                            <div><span className="text-gray-500">Unique:</span> {col.cardinality}</div>
+                            <div><span className="text-gray-500">Nulls:</span> {col.nulls}</div>
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <div className="space-y-0.5">
+                            <div><span className="text-gray-500">Type:</span> <span className="font-mono">{col.type}</span></div>
+                            <div><span className="text-gray-500">Range:</span> {col.min} → {col.max}</div>
+                            <div><span className="text-gray-500">Nulls:</span> {col.nulls}</div>
+                          </div>
+                        );
+                      }
+                    };
+                    
+                    return (
+                      <tr key={idx} className="border-t border-charcoal-300">
+                        <td className="px-3 py-2 font-mono text-gray-300 border-r border-charcoal-300 align-top">
+                          {diff.column}
+                        </td>
+                        <td className="px-3 py-2 text-blue-200 bg-blue-900/10 border-r border-charcoal-300 align-top">
+                          {formatStats(diff.source)}
+                        </td>
+                        <td className="px-3 py-2 text-purple-200 bg-purple-900/10 align-top">
+                          {formatStats(diff.target)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Unified Sample Rows Section */}
+      {allSamples.length > 0 && (
+        <div className="border border-charcoal-300 rounded-lg overflow-hidden">
+          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300 flex items-center justify-between">
+            <div>
+              <span className="text-gray-300 font-semibold text-sm">Sample Rows</span>
+              <span className="text-gray-500 text-xs ml-2">
+                <span className="inline-flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 bg-blue-500 rounded"></span>
+                  {sourceCount} in source only
+                </span>
+                <span className="mx-1.5">•</span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 bg-purple-500 rounded"></span>
+                  {targetCount} in target only
+                </span>
+              </span>
+            </div>
+            
+            {/* Bulk SQL Buttons */}
+            <div className="flex gap-2">
+              {sourceCount > 0 && (
+                <button
+                  onClick={() => copyToClipboard(generateBulkSourceSql())}
+                  className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                  title="Copy SQL for all source rows"
+                >
+                  Copy SQL - All Source ({sourceCount})
+                </button>
+              )}
+              {targetCount > 0 && (
+                <button
+                  onClick={() => copyToClipboard(generateBulkTargetSql())}
+                  className="px-2 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
+                  title="Copy SQL for all target rows"
+                >
+                  Copy SQL - All Target ({targetCount})
+                </button>
+              )}
+            </div>
+          </div>
+          
+          <div className="p-3">
+            <div className="overflow-x-auto">
+              <table className="w-full border border-charcoal-300 rounded text-xs">
+                <thead className="bg-charcoal-400">
+                  <tr>
+                    <th className="px-2 py-1.5 w-14 border-r border-charcoal-300"></th>
+                    <th className="px-2 py-1.5 w-20 border-r border-charcoal-300 text-left text-gray-300">Source</th>
+                    {columns.map(col => (
+                      <th key={col} className="px-2 py-1.5 text-left font-semibold text-gray-300 border-r border-charcoal-300 last:border-r-0">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {allSamples.map((row, idx) => {
+                    const isSource = row._direction === 'source';
+                    const tableName = isSource ? sourceTable : targetTable;
+                    const rowData = { ...row };
+                    delete rowData._direction;
+                    
+                    return (
+                      <tr 
+                        key={idx} 
+                        className={`border-t border-charcoal-300 ${
+                          isSource ? 'bg-blue-900/10' : 'bg-purple-900/10'
+                        }`}
+                      >
+                        <td className="px-2 py-1.5 border-r border-charcoal-300 text-center">
+                          <CopySqlButton tableName={tableName} row={rowData} />
+                        </td>
+                        <td className="px-2 py-1.5 border-r border-charcoal-300">
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                            isSource ? 'text-blue-300' : 'text-purple-300'
+                          }`}>
+                            <span className={`inline-block w-2 h-2 rounded ${
+                              isSource ? 'bg-blue-500' : 'bg-purple-500'
+                            }`}></span>
+                            {isSource ? 'SRC' : 'TGT'}
+                          </span>
+                        </td>
+                        {columns.map(col => (
+                          <td key={col} className="px-2 py-1.5 font-mono text-gray-200 border-r border-charcoal-300 last:border-r-0">
+                            <ExpandableCell value={row[col]} />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -90,6 +90,118 @@ def summarize_df(df: DataFrame, pk_columns: list[str]) -> list[dict]:
     return stats
 
 
+def run_except_all_count_analysis(result: dict) -> dict | None:
+    """
+    Analyze row count mismatch for except_all mode.
+    
+    Compares summary statistics between source and target tables,
+    showing only columns where stats differ. Reuses except_all results
+    from the validation run.
+    
+    Args:
+        result: Validation result dict containing src_df, tgt_df,
+                sample_differences (from except_all), row_count_source, row_count_target
+    
+    Returns:
+        Analysis dict with column differences and sample rows, or None if not applicable
+    """
+    src_df: DataFrame = result.get("src_df")
+    tgt_df: DataFrame = result.get("tgt_df")
+    row_count_source: int = result.get("row_count_source", 0)
+    row_count_target: int = result.get("row_count_target", 0)
+    except_all_samples: list[dict] = result.get("sample_differences", [])
+    rows_different: int = result.get("rows_different", 0)
+    
+    if not all([src_df, tgt_df]):
+        return None
+    
+    print("Analyzing column statistics for except_all row count mismatch...")
+    
+    # Calculate summary stats for both tables
+    source_summary = summarize_df(src_df, [])  # No PKs in except_all mode
+    target_summary = summarize_df(tgt_df, [])
+    
+    # Create lookup dict for target summary by column name
+    target_summary_dict = {col["name"]: col for col in target_summary}
+    
+    # Compare and filter to columns with differences
+    column_differences = []
+    for src_col in source_summary:
+        col_name = src_col["name"]
+        tgt_col = target_summary_dict.get(col_name)
+        
+        if not tgt_col:
+            # Column missing in target
+            column_differences.append({
+                "column": col_name,
+                "source": src_col,
+                "target": None,
+                "difference_type": "missing_in_target"
+            })
+            continue
+        
+        # Check if stats differ
+        differs = False
+        if src_col["type"] == tgt_col["type"]:
+            if src_col["type"] in ["numeric", "time"]:
+                differs = (src_col.get("min") != tgt_col.get("min") or 
+                          src_col.get("max") != tgt_col.get("max") or
+                          src_col.get("nulls") != tgt_col.get("nulls"))
+            elif src_col["type"] == "string":
+                differs = (src_col.get("cardinality") != tgt_col.get("cardinality") or
+                          src_col.get("nulls") != tgt_col.get("nulls"))
+        else:
+            differs = True  # Type mismatch
+        
+        if differs:
+            column_differences.append({
+                "column": col_name,
+                "source": src_col,
+                "target": tgt_col,
+                "difference_type": "stats_differ"
+            })
+    
+    # Check for columns in target but not source
+    source_cols = {col["name"] for col in source_summary}
+    for tgt_col in target_summary:
+        if tgt_col["name"] not in source_cols:
+            column_differences.append({
+                "column": tgt_col["name"],
+                "source": None,
+                "target": tgt_col,
+                "difference_type": "missing_in_source"
+            })
+    
+    print(f"Found {len(column_differences)} columns with differing statistics")
+    
+    # Get except_all samples - these are rows in source not in target
+    in_source_not_target_samples = except_all_samples if except_all_samples else []
+    
+    # Get the reverse: rows in target not in source
+    # We need to run target.exceptAll(source)
+    in_target_not_source_df = tgt_df.exceptAll(src_df)
+    in_target_not_source_count = in_target_not_source_df.count()
+    in_target_not_source_samples = [r.asDict() for r in in_target_not_source_df.limit(10).collect()]
+    
+    print(f"In source not in target: {rows_different} rows")
+    print(f"In target not in source: {in_target_not_source_count} rows")
+    
+    return {
+        "mode": "row_count_mismatch_except_all",
+        "source_row_count": row_count_source,
+        "target_row_count": row_count_target,
+        "column_differences": column_differences,
+        "in_source_not_target": {
+            "count": rows_different,
+            "samples": in_source_not_target_samples[:10]  # Limit to 10
+        },
+        "in_target_not_source": {
+            "count": in_target_not_source_count,
+            "samples": in_target_not_source_samples
+        }
+    }
+
+
 def run_pk_count_analysis(result: dict) -> dict | None:
     """
     Analyze row count mismatch using FULL OUTER JOIN on PKs.
