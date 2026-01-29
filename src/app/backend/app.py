@@ -767,6 +767,17 @@ async def update_schedule(id: int, body: ScheduleUpdate):
     if not await can_edit_object(user_email, 'schedules', id):
         raise HTTPException(403, "You don't have permission to edit this schedule")
     
+    # Check if cron_expr or timezone changed - if so, reset next_run_at so sentinel recalculates
+    current = await fetchrow("SELECT cron_expr, timezone FROM control.schedules WHERE id=$1", id)
+    reset_next_run = current and (
+        (body.cron_expr and body.cron_expr != current["cron_expr"]) or
+        (body.timezone and body.timezone != current["timezone"])
+    )
+    
+    next_run_at = None if reset_next_run else (
+        datetime.fromisoformat(body.next_run_at) if body.next_run_at else None
+    )
+    
     row = await fetchrow("""
         UPDATE control.schedules SET
           name = COALESCE($2, name),
@@ -776,7 +787,7 @@ async def update_schedule(id: int, body: ScheduleUpdate):
           max_concurrency = COALESCE($6, max_concurrency),
           backfill_policy = COALESCE($7, backfill_policy),
           last_run_at = COALESCE($8, last_run_at),
-          next_run_at = COALESCE($9, next_run_at),
+          next_run_at = $9,
           updated_by = $10,
           updated_at = now(),
           version = version + 1
@@ -785,8 +796,7 @@ async def update_schedule(id: int, body: ScheduleUpdate):
     """, 
     id, body.name, body.cron_expr, body.timezone, body.enabled, body.max_concurrency, body.backfill_policy, 
     datetime.fromisoformat(body.last_run_at) if body.last_run_at else None, 
-    datetime.fromisoformat(body.next_run_at) if body.next_run_at else None, 
-    user_email, body.version)
+    next_run_at, user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.schedules WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": serialize_row(current) if current else None})
