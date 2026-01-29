@@ -250,26 +250,29 @@ export function SampleDifferencesModal({ validation, onClose }) {
     }
   }
   
-  const isPKMode = samples?.mode === 'primary_key';
-  const isRowCountMismatch = samples?.mode === 'row_count_mismatch';
-  const isExceptAllRowCountMismatch = samples?.mode === 'row_count_mismatch_except_all';
-  const isExceptAllBidirectional = samples?.mode === 'except_all_bidirectional';
-  const isExceptAllMode = Array.isArray(samples);
+  // Extract mode and data from new structure
+  const mode = samples?.mode;
+  const data = samples?.data;
+  
+  const isPKMode = mode === 'primary_key';
+  const isRowCountMismatch = mode === 'row_count_mismatch';
+  const isExceptAllRowCountMismatch = mode === 'row_count_mismatch_except_all';
+  const isExceptAllBidirectional = mode === 'except_all_bidirectional';
+  const isExceptAllMode = mode === 'except_all';
   const isPKPending = validation.compare_mode === 'primary_key' && isExceptAllMode;
-  const isExceptAllCountMismatch = validation.compare_mode === 'except_all' && !validation.row_count_match && !isExceptAllMode && !isExceptAllRowCountMismatch && !isExceptAllBidirectional;
+  const isExceptAllCountMismatch = validation.compare_mode === 'except_all' && !validation.row_count_match && !isExceptAllMode && !isExceptAllRowCountMismatch;
   const isPKCountPending = validation.compare_mode === 'primary_key' && !validation.row_count_match && !isRowCountMismatch;
   
   // For except_all with row count mismatch, determine which view to show based on _modalMode
   const modalMode = validation._modalMode || 'auto';
   
-  // Handle except_all with row count mismatch - respect _modalMode for BOTH 'row_count_mismatch_except_all' AND 'except_all_bidirectional' when row counts don't match
+  // Handle except_all with row count mismatch - respect _modalMode
   const hasRowCountMismatch = !validation.row_count_match && validation.compare_mode === 'except_all';
-  const hasColumnAnalysis = samples?.column_differences !== undefined;
-  const canShowModalModeViews = (isExceptAllRowCountMismatch || (isExceptAllBidirectional && hasRowCountMismatch));
+  const hasColumnAnalysis = data?.column_differences !== undefined;
+  const canShowModalModeViews = isExceptAllRowCountMismatch;
   
   const showUnifiedSamples = canShowModalModeViews && modalMode === 'diffs';
   const showColumnAnalysisOnly = canShowModalModeViews && modalMode === 'row_count' && hasColumnAnalysis;
-  const showBidirectionalOnly = isExceptAllBidirectional && !hasRowCountMismatch;
   
   // If user clicks "Row count" but column analysis isn't ready, show the full view instead
   const showFullViewAsFallback = canShowModalModeViews && modalMode === 'row_count' && !hasColumnAnalysis;
@@ -325,10 +328,10 @@ export function SampleDifferencesModal({ validation, onClose }) {
         
         {/* Content - Different for each mode */}
         <div className="flex-1 overflow-auto">
-          {isPKMode && <PKModeView samples={samples} validation={validation} />}
-          {isRowCountMismatch && <RowCountMismatchView samples={samples} validation={validation} />}
-          {showUnifiedSamples && <ExceptAllUnifiedSamplesView analysis={samples} validation={validation} />}
-          {showColumnAnalysisOnly && <ExceptAllColumnAnalysisOnlyView analysis={samples} validation={validation} />}
+          {isPKMode && <PKModeView data={data} validation={validation} />}
+          {isRowCountMismatch && <RowCountMismatchView data={data} validation={validation} />}
+          {showUnifiedSamples && <ExceptAllUnifiedSamplesView analysis={data} validation={validation} />}
+          {showColumnAnalysisOnly && <ExceptAllColumnAnalysisOnlyView analysis={data} validation={validation} />}
           {showFullViewAsFallback && (
             <div className="space-y-4">
               <div className="p-3 bg-yellow-900/20 border border-yellow-700 rounded">
@@ -338,24 +341,28 @@ export function SampleDifferencesModal({ validation, onClose }) {
                   Showing row-level differences in the meantime.
                 </p>
               </div>
-              <ExceptAllUnifiedSamplesView analysis={samples} validation={validation} />
+              <ExceptAllUnifiedSamplesView analysis={data} validation={validation} />
             </div>
           )}
-          {canShowModalModeViews && !showUnifiedSamples && !showColumnAnalysisOnly && !showFullViewAsFallback && <ExceptAllRowCountMismatchView samples={samples} validation={validation} />}
-          {showBidirectionalOnly && <ExceptAllUnifiedSamplesView analysis={samples} validation={validation} />}
-          {isPKPending && <PKModeView samples={samples} validation={validation} />}
-          {isExceptAllMode && !isPKPending && !showUnifiedSamples && <ExceptAllModeView samples={samples} validation={validation} />}
+          {canShowModalModeViews && !showUnifiedSamples && !showColumnAnalysisOnly && !showFullViewAsFallback && <ExceptAllRowCountMismatchView data={data} validation={validation} />}
+          {isPKPending && <PKModeView data={data} validation={validation} />}
+          {isExceptAllMode && !isPKPending && !showUnifiedSamples && <ExceptAllModeView data={data} validation={validation} />}
           {isExceptAllCountMismatch && (
-            <div className="p-4 bg-charcoal-400 border border-charcoal-300 rounded-lg">
-              <p className="text-gray-300 mb-2">
-                <span className="font-semibold">Row count mismatch detected</span>
+            <div className="p-4 bg-yellow-900/20 border border-yellow-700 rounded-lg">
+              <p className="text-yellow-300 text-sm font-semibold">Analysis Processing</p>
+              <p className="text-yellow-200 text-xs mt-2">
+                Row count mismatch detected: Source has {validation.row_count_source?.toLocaleString()} rows, 
+                Target has {validation.row_count_target?.toLocaleString()} rows.
               </p>
-              <p className="text-gray-400 text-sm">
-                Source: {validation.row_count_source?.toLocaleString()} rows • Target: {validation.row_count_target?.toLocaleString()} rows
+              <p className="text-yellow-200 text-xs mt-2">
+                Detailed analysis is being processed in the background. Refresh the page to see:
               </p>
-              <p className="text-gray-500 text-sm mt-3">
-                Detailed row analysis is not available for <span className="font-mono text-gray-400">except_all</span> mode 
-                because there are no primary keys defined to identify which specific rows are missing or extra.
+              <ul className="text-yellow-200 text-xs mt-1 ml-4 list-disc">
+                <li>Column-level statistics comparison</li>
+                <li>Sample rows from source and target</li>
+              </ul>
+              <p className="text-yellow-300 text-xs mt-3">
+                Check the Databricks notebook run for real-time progress.
               </p>
             </div>
           )}
@@ -447,7 +454,9 @@ function PKPendingView({ samples, validation }) {
 /**
  * Display for except_all mode - shows full mismatched rows
  */
-function ExceptAllModeView({ samples, validation }) {
+function ExceptAllModeView({ data, validation }) {
+  const samples = data?.samples || [];
+  
   if (!samples || samples.length === 0) {
     return <p className="text-gray-400">No sample data available</p>;
   }
@@ -693,8 +702,8 @@ function MissingRowsSection({ title, data, tableName, pkColumns = [], defaultExp
 /**
  * Display for row count mismatch - shows missing in target and missing in source
  */
-function RowCountMismatchView({ samples, validation }) {
-  if (samples.skipped) {
+function RowCountMismatchView({ data, validation }) {
+  if (data?.skipped) {
     return (
       <div className="p-4 bg-yellow-900/20 border border-yellow-700 rounded">
         <p className="text-yellow-300 text-sm font-semibold">Analysis Skipped</p>
@@ -716,9 +725,9 @@ function RowCountMismatchView({ samples, validation }) {
     );
   }
   
-  const { missing_in_target, missing_in_source } = samples;
-  // Try validation.pk_columns first, fallback to samples.pk_columns if stored there
-  const pkColumns = validation.pk_columns || samples.pk_columns || [];
+  const { missing_in_target, missing_in_source } = data || {};
+  // Try validation.pk_columns first, fallback to data.pk_columns if stored there
+  const pkColumns = validation.pk_columns || data?.pk_columns || [];
   const sourceTable = validation.source_table || 'SOURCE_TABLE';
   const targetTable = validation.target_table || 'TARGET_TABLE';
   
@@ -1039,14 +1048,14 @@ function ExceptAllColumnAnalysisOnlyView({ analysis, validation }) {
  * Display for except_all mode with row count mismatch
  * Shows column analysis (stats that differ) and unified sample rows from both directions
  */
-function ExceptAllRowCountMismatchView({ samples, validation }) {
+function ExceptAllRowCountMismatchView({ data, validation }) {
   const { 
     source_row_count, 
     target_row_count, 
     column_differences, 
     in_source_not_target, 
     in_target_not_source 
-  } = samples;
+  } = data || {};
   
   const sourceTable = validation.source_table || 'SOURCE_TABLE';
   const targetTable = validation.target_table || 'TARGET_TABLE';
@@ -1277,8 +1286,8 @@ function ExceptAllRowCountMismatchView({ samples, validation }) {
   );
 }
 
-function PKModeView({ samples, validation }) {
-  if (!samples?.samples || samples.samples.length === 0) {
+function PKModeView({ data, validation }) {
+  if (!data?.samples || data.samples.length === 0) {
     return (
       <div className="p-3 bg-yellow-900/20 border border-yellow-700 rounded">
         <p className="text-yellow-300 text-sm">
@@ -1302,7 +1311,7 @@ function PKModeView({ samples, validation }) {
     );
   }
   
-  const { pk_columns, samples: pkSamples } = samples;
+  const { pk_columns, samples: pkSamples } = data;
   
   return (
     <div className="space-y-3">

@@ -74,47 +74,20 @@ print(f"Starting: {name} (trigger_id={trigger_id or 'manual'})")
 # DBTITLE 1,Schema and Count Validation
 
 def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) -> dict:
-    """Compare column names and data types between source and target"""
+    """Compare column names"""
     src_cols: set[str] = set(c for c in src_df.columns if c not in exclude)
     tgt_cols: set[str] = set(c for c in tgt_df.columns if c not in exclude)
     
-    # Check column names
-    names_match: bool = src_cols == tgt_cols
-    
-    # Check data types for matching columns
-    type_mismatches = []
-    if names_match:
-        src_schema_dict = {field.name: field.dataType for field in src_df.schema.fields if field.name not in exclude}
-        tgt_schema_dict = {field.name: field.dataType for field in tgt_df.schema.fields if field.name not in exclude}
-        
-        for col_name in src_cols:
-            src_type = str(src_schema_dict[col_name])
-            tgt_type = str(tgt_schema_dict[col_name])
-            if src_type != tgt_type:
-                type_mismatches.append({
-                    "column": col_name,
-                    "source_type": src_type,
-                    "target_type": tgt_type
-                })
-    
-    match: bool = names_match and len(type_mismatches) == 0
-    
-    if not names_match:
-        print(f"\tSchema does not match, source: {len(src_cols)}, target: {len(tgt_cols)} columns")
-    elif type_mismatches:
-        print(f"\tSchema does not match, {len(type_mismatches)} column(s) have different data types")
-        for tm in type_mismatches:
-            print(f"\t  - {tm['column']}: {tm['source_type']} → {tm['target_type']}")
-    else:
+    if src_cols == tgt_cols:
         print(f"\tSchema matches, {len(src_cols)} columns")
-    
+    else:
+        print(f"\tSchema does not match, source: {len(src_cols)} != target: {len(tgt_cols)} columns")
     return {
-        "schema_match": match,
+        "schema_match": src_cols == tgt_cols,
         "schema_details": {
             "columns_matched": list(src_cols & tgt_cols),
             "columns_missing": list(src_cols - tgt_cols),
-            "columns_extra": list(tgt_cols - src_cols),
-            "type_mismatches": type_mismatches
+            "columns_extra": list(tgt_cols - src_cols)
         }
     }
 
@@ -143,6 +116,29 @@ def validate_counts(
 def run_except_all(src_df: DataFrame, tgt_df: DataFrame) -> DataFrame:
     """Find rows in source not in target using EXCEPT ALL"""
     return src_df.exceptAll(tgt_df)
+
+def run_except_all_bidirectional(src_df: DataFrame, tgt_df: DataFrame) -> dict:
+    """Get bidirectional except_all samples for row count mismatch analysis"""
+    # Source not in target
+    in_source_not_target_df = src_df.exceptAll(tgt_df)
+    in_source_not_target_count = in_source_not_target_df.count()
+    in_source_not_target_samples = [r.asDict() for r in in_source_not_target_df.limit(10).collect()]
+    
+    # Target not in source
+    in_target_not_source_df = tgt_df.exceptAll(src_df)
+    in_target_not_source_count = in_target_not_source_df.count()
+    in_target_not_source_samples = [r.asDict() for r in in_target_not_source_df.limit(10).collect()]
+    
+    return {
+        "in_source_not_target": {
+            "count": in_source_not_target_count,
+            "samples": in_source_not_target_samples
+        },
+        "in_target_not_source": {
+            "count": in_target_not_source_count,
+            "samples": in_target_not_source_samples
+        }
+    }
 
 def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str]) -> DataFrame:
     """Find rows with PK matches but different values using hash comparison"""
@@ -174,7 +170,8 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
     diff_count: int = diff_df.count()
     
     if diff_count == 0:
-        return {"rows_different": 0, "sample_differences": []}
+        sample_differences = {"mode": mode, "data": {"samples": []}} if mode == "except_all" else []
+        return {"rows_different": 0, "sample_differences": sample_differences}
 
     # Try unicode downgrade if enabled
     if downgrade_unicode_enabled:
@@ -185,53 +182,29 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str], mode
         diff_count = diff_df.count()
         
         if diff_count == 0:
-            return {"rows_different": 0, "sample_differences": []}
+            sample_differences = {"mode": mode, "data": {"samples": []}} if mode == "except_all" else []
+            return {"rows_different": 0, "sample_differences": sample_differences}
     
     print(f"Found {diff_count} differences, extracting sample")
     
-    # For except_all mode, always produce bidirectional structured output
-    if mode == "except_all":
-        print("Running bidirectional exceptAll analysis...")
-        
-        # Source not in target (already computed)
-        in_source_not_target_samples = [r.asDict() for r in diff_df.limit(10).collect()]
-        
-        # Target not in source (reverse direction)
-        in_target_not_source_df = tgt_filtered.exceptAll(src_filtered)
-        in_target_not_source_count = in_target_not_source_df.count()
-        in_target_not_source_samples = [r.asDict() for r in in_target_not_source_df.limit(10).collect()]
-        
-        print(f"In source not in target: {diff_count} rows")
-        print(f"In target not in source: {in_target_not_source_count} rows")
-        
-        # Return structured format for unified sample view
-        sample_differences = {
-            "mode": "except_all_bidirectional",
-            "in_source_not_target": {
-                "count": diff_count,
-                "samples": in_source_not_target_samples
-            },
-            "in_target_not_source": {
-                "count": in_target_not_source_count,
-                "samples": in_target_not_source_samples
-            }
-        }
-        
-        return {
-            "rows_different": diff_count,
-            "sample_differences": sample_differences,
-            "src_df": src_filtered,
-            "tgt_df": tgt_filtered,
-            "sample_df": diff_df.limit(10)
-        }
-    
-    # Primary key mode - keep existing simple format
+    # Return simple sample format - bidirectional analysis will happen in post-processing
     sample_df: DataFrame = diff_df.limit(10)
     sample_dicts: list[dict] = [row.asDict() for row in sample_df.collect()]
     
+    # Wrap in mode/data structure for except_all, leave as-is for PK (will be post-processed)
+    if mode == "except_all":
+        sample_differences = {
+            "mode": "except_all",
+            "data": {
+                "samples": sample_dicts
+            }
+        }
+    else:
+        sample_differences = sample_dicts  # PK mode - will be wrapped by run_pk_analysis()
+    
     return {
         "rows_different": diff_count,
-        "sample_differences": sample_dicts,
+        "sample_differences": sample_differences,
         "src_df": src_filtered,
         "tgt_df": tgt_filtered,
         "sample_df": sample_df
@@ -384,7 +357,7 @@ history_id: int | None = history_response.get("id") if history_response else Non
 # Handle row count mismatch for except_all mode
 if compare_mode == "except_all" and not result["row_count_match"] and history_id:
     print("Running except_all count analysis...")
-    from pk_analysis import run_except_all_count_analysis
+    from analysis_utils import run_except_all_count_analysis
     except_all_count_analysis = run_except_all_count_analysis(result)
     if except_all_count_analysis:
         # Overwrite sample_differences with the full analysis (contains samples + column analysis)

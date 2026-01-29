@@ -195,7 +195,12 @@ CREATE TABLE IF NOT EXISTS control.validation_history (
   ) STORED,
   
   -- Sample differences (limited for UI display)
-  sample_differences JSONB,  -- [{row_key: ..., column: ..., src_val: ..., tgt_val: ...}, ...] (max 100)
+  -- Structure: {mode: string, data: {...}}
+  -- Modes: 'except_all' (data.samples=[...rows]), 
+  --         'row_count_mismatch_except_all' (data.column_differences, data.in_source_not_target, data.in_target_not_source),
+  --         'primary_key' (data.pk_columns, data.samples=[...interleaved]),
+  --         'row_count_mismatch' (data.pk_columns, data.missing_in_target, data.missing_in_source)
+  sample_differences JSONB,
   
   -- Error handling
   error_message     TEXT,

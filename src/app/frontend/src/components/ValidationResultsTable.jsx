@@ -101,7 +101,6 @@ export function ValidationResultsTable({
             <SortableHeader label="Status" sortKey="status" />
             <SortableHeader label="Duration" sortKey="duration" />
             <SortableHeader label="Source → Target" sortKey="systems" />
-            <SortableHeader label="Schema" sortKey="schema_match" className="whitespace-nowrap" />
             <SortableHeader label="Row Counts" sortKey="row_counts" className="whitespace-nowrap" />
             <SortableHeader label="Diffs" sortKey="differences" className="whitespace-nowrap" />
             <SortableHeader label="Triggered" sortKey="requested_at" />
@@ -111,7 +110,7 @@ export function ValidationResultsTable({
         <tbody>
           {data.length === 0 ? (
             <tr>
-              <td colSpan={showCheckboxes ? 12 : 11} className="text-center p-8 text-gray-500 text-base">
+              <td colSpan={showCheckboxes ? 11 : 10} className="text-center p-8 text-gray-500 text-base">
                 {emptyMessage}
               </td>
             </tr>
@@ -183,15 +182,6 @@ export function ValidationResultsTable({
                 </td>
                 <td className="px-2 py-1.5 text-sm text-gray-400 whitespace-nowrap">
                   {v.source_system_name} → {v.target_system_name}
-                </td>
-                <td className="px-2 py-1.5 text-sm whitespace-nowrap">
-                  {v.status === 'error' || v.schema_match == null ? (
-                    <span className="text-gray-500">-</span>
-                  ) : v.schema_match ? (
-                    <span className="text-green-400">✓</span>
-                  ) : (
-                    <span className="text-red-400" title="Schema mismatch detected">✗</span>
-                  )}
                 </td>
                 <td className="px-2 py-1.5 text-sm whitespace-nowrap">
                   {v.status === 'error' || v.row_count_source == null ? (
