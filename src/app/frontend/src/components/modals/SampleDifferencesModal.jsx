@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { diffChars } from 'diff';
 
 const TRUNCATE_LENGTH = 50;
@@ -234,7 +234,7 @@ function ExpandableCell({ value, className = '' }) {
  * Modal to display sample differences from validation results.
  * Handles both except_all and primary_key comparison modes.
  */
-export function SampleDifferencesModal({ validation, onClose }) {
+export function SampleDifferencesModal({ validation, onClose, onRefresh }) {
   const [maximized, setMaximized] = useState(false);
   
   if (!validation) return null;
@@ -276,6 +276,22 @@ export function SampleDifferencesModal({ validation, onClose }) {
   
   // If user clicks "Row count" but column analysis isn't ready, show the full view instead
   const showFullViewAsFallback = canShowModalModeViews && modalMode === 'row_count' && !hasColumnAnalysis;
+  
+  // Auto-refresh when post-processing is pending
+  const isProcessing = isPKPending || isExceptAllCountMismatch || isPKCountPending || showFullViewAsFallback;
+  
+  useEffect(() => {
+    if (!isProcessing || !onRefresh) return;
+    
+    // Poll every 2 seconds when processing
+    const intervalId = setInterval(() => {
+      console.log('Polling for post-processing updates...');
+      onRefresh();
+    }, 2000);
+    
+    // Cleanup on unmount or when processing completes
+    return () => clearInterval(intervalId);
+  }, [isProcessing, onRefresh]);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>

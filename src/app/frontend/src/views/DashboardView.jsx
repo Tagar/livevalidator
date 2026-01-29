@@ -112,7 +112,7 @@ const formatDateTime = (date) => {
   });
 };
 
-export function DashboardView({ data, loading, error, onNavigateToEntity }) {
+export function DashboardView({ data, loading, error, onNavigateToEntity, onRefresh }) {
   // Filter states
   const [activePreset, setActivePreset] = useState('7d');
   const [customDateFrom, setCustomDateFrom] = useState('');
@@ -1095,7 +1095,8 @@ export function DashboardView({ data, loading, error, onNavigateToEntity }) {
       {selectedSample && (
         <SampleDifferencesModal 
           validation={selectedSample} 
-          onClose={() => setSelectedSample(null)} 
+          onClose={() => setSelectedSample(null)}
+          onRefresh={onRefresh}
         />
       )}
 

@@ -592,7 +592,8 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
       {selectedSample && (
         <SampleDifferencesModal 
           validation={selectedSample} 
-          onClose={() => setSelectedSample(null)} 
+          onClose={() => setSelectedSample(null)}
+          onRefresh={onRefresh}
         />
       )}
     </>

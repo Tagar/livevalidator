@@ -594,6 +594,7 @@ export default function App() {
             loading={validations.loading}
             error={validations.error}
             onNavigateToEntity={navigateToEntity}
+            onRefresh={validations.refresh}
           />
         )}
 
