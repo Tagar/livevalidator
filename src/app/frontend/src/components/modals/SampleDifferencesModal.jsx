@@ -379,7 +379,7 @@ export function SampleDifferencesModal({ validation, onClose }) {
               </p>
             </div>
           )}
-          {!isPKMode && !isRowCountMismatch && !isExceptAllRowCountMismatch && !isExceptAllBidirectional && !isExceptAllMode && !isExceptAllCountMismatch && !isPKCountPending && (
+          {!isPKMode && !isRowCountMismatch && !isExceptAllRowCountMismatch && !isExceptAllMode && !isExceptAllCountMismatch && !isPKCountPending && (
             <p className="text-gray-400">No sample data available</p>
           )}
         </div>
