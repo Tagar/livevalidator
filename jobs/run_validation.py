@@ -336,6 +336,9 @@ if serde_result.get('src_df'):
     tgt_df = serde_result.pop('tgt_df')
     sample_df = serde_result.pop('sample_df')
 
+# Remove internal tracking fields from API payload
+serde_result.pop('source_was_limited', None)
+
 history_response: dict = client.api_call("POST", "/api/validation-history", serde_result)
 
 if result["status"] == "succeeded":
