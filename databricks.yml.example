@@ -77,7 +77,7 @@ targets:
       clusters:
         live_validator_cluster:
           spark_conf:
-            spark.your.additiona.config: 'true'
+            spark.your.additional.config: 'true'
           permissions:
             - group_name: users
               level: CAN_ATTACH_TO
@@ -92,7 +92,7 @@ targets:
                 # Both of these required for Teradata
                 - maven:
                     coordinates: com.teradata.jdbc:terajdbc:20.00.00.51
-                - pypy:
+                - pypi:
                     package: teradatasql
                 # Required for Oracle
                 - maven:

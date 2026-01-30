@@ -7,6 +7,7 @@ import sys
 import os
 sys.path.append(os.path.abspath('.'))
 from backend_api_client import BackendAPIClient
+from teradata_columns import teradata_columns
 
 
 def get_connection_info(system_name: str, backend_client: BackendAPIClient) -> dict:
@@ -77,7 +78,7 @@ def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
             table_schema = spark.read.table(f"{catalog}.{schema}.{tbl}").schema
             return [(col.name, str(col.dataType)) for col in table_schema.fields]
         case "Teradata":
-            query_columns = f"HELP COLUMN {schema.upper()}.{tbl.upper()}.*"
+            return teradata_columns(conn['system']['host'], conn['username'], conn['password'], schema=schema, tbl=tbl)
         case "Oracle":
             query_columns = f"""
             SELECT column_name, data_type FROM all_tab_columns
