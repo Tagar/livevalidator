@@ -87,10 +87,14 @@ targets:
         run_validation:
           tasks:
             - task_key: validate
-            # add all libraries to UC allowlist
+              # add all libraries to UC allowlist (!!!)
               libraries:
+                # Both of these required for Teradata
                 - maven:
                     coordinates: com.teradata.jdbc:terajdbc:20.00.00.51
+                - pypy:
+                    package: teradatasql
+                # Required for Oracle
                 - maven:
                     coordinates: com.oracle.database.jdbc:ojdbc11:23.5.0.24.07
           permissions:
