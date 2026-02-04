@@ -2,6 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TagInput } from '../TagInput';
 
 export function TableModal({ table, systems, schedules, onSave, onClose }) {
+  const [errors, setErrors] = useState([]);
+  const [saving, setSaving] = useState(false);
+  
   // Combine schema.table for display
   const getSrcTableFull = () => {
     if (!table) return "";
@@ -75,6 +78,9 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
   };
   
   const handleSave = async () => {
+    setErrors([]);
+    setSaving(true);
+    
     // Parse schema.table format
     const parseSchematable = (full) => {
       const parts = full.split('.');
@@ -97,7 +103,36 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
       tgt_table: tgt.table
     };
     
-    await onSave(payload, selectedSchedules, tags);
+    try {
+      await onSave(payload, selectedSchedules, tags);
+    } catch (err) {
+      // Parse error response
+      const errorMessages = [];
+      if (err.response) {
+        const data = err.response;
+        if (Array.isArray(data)) {
+          // Pydantic validation errors
+          data.forEach(e => {
+            const field = e.loc?.slice(-1)[0] || 'field';
+            errorMessages.push(e.msg?.replace('Value error, ', '') || `Invalid ${field}`);
+          });
+        } else if (data.detail) {
+          if (Array.isArray(data.detail)) {
+            data.detail.forEach(e => {
+              const field = e.loc?.slice(-1)[0] || 'field';
+              errorMessages.push(e.msg?.replace('Value error, ', '') || `Invalid ${field}`);
+            });
+          } else {
+            errorMessages.push(data.detail);
+          }
+        } else if (data.message) {
+          errorMessages.push(data.message);
+        }
+      }
+      setErrors(errorMessages.length ? errorMessages : [err.message || 'Failed to save']);
+    } finally {
+      setSaving(false);
+    }
   };
   
   const toggleSchedule = (scheduleId) => {
@@ -129,6 +164,21 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
           <h3 className="m-0 text-rust text-lg font-semibold">{table ? "Edit Table" : "New Table"}</h3>
         </div>
         <div className="p-4 max-h-[70vh] overflow-y-auto">
+          {/* Error Display */}
+          {errors.length > 0 && (
+            <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded-lg">
+              <div className="flex items-start gap-2">
+                <span className="text-red-400 text-lg">⚠</span>
+                <div className="flex-1">
+                  <p className="text-red-400 font-medium text-sm mb-1">Please fix the following:</p>
+                  <ul className="text-red-300 text-sm list-disc list-inside space-y-0.5">
+                    {errors.map((err, i) => <li key={i}>{err}</li>)}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Source System & Table */}
           <div className="mb-3">
             <label className="block mb-1 font-medium text-gray-400 text-sm">Source Table <span className="text-gray-500 text-xs">(include schema: schema.table)</span></label>
@@ -183,13 +233,13 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
             </select>
           </div>
           <div className="mb-3">
+            <label className="block mb-1 font-medium text-gray-400 text-sm">Primary Key Columns (comma-separated)</label>
+            <input value={Array.isArray(form.pk_columns)?form.pk_columns.join(','):''} onChange={e=>setForm({...form, pk_columns:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="id, user_id" />
+          </div>
+          <div className="mb-3">
             <label className="block mb-1 font-medium text-gray-400 text-sm">Watermark Filter</label>
             <input value={form.watermark_filter} onChange={e=>setForm({...form, watermark_filter:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="e.g., created_at > '2024-01-01' OR status = 'active'" />
             <p className="text-gray-500 text-xs mt-1">Optional WHERE clause to filter rows before comparison (applied to both source and target)</p>
-          </div>
-          <div className="mb-3">
-            <label className="block mb-1 font-medium text-gray-400 text-sm">Primary Key Columns (comma-separated)</label>
-            <input value={Array.isArray(form.pk_columns)?form.pk_columns.join(','):''} onChange={e=>setForm({...form, pk_columns:e.target.value.split(',').map(s=>s.trim()).filter(Boolean)})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="id, user_id" />
           </div>
           <div className="mb-3">
             <label className="block mb-1 font-medium text-gray-400 text-sm">Exclude Columns (comma-separated)</label>
@@ -246,7 +296,7 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
         
         <div className="border-t border-charcoal-200 px-4 py-3 flex gap-2 justify-end bg-charcoal-400">
           <button onClick={onClose} className="px-3 py-2 bg-charcoal-700 text-gray-200 border border-charcoal-200 rounded-md cursor-pointer hover:bg-charcoal-600">Cancel</button>
-          <button onClick={handleSave} className="px-3 py-2 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500">Save</button>
+          <button onClick={handleSave} disabled={saving} className="px-3 py-2 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed">{saving ? 'Saving...' : 'Save'}</button>
         </div>
       </div>
     </div>

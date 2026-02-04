@@ -2,6 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TagInput } from '../TagInput';
 
 export function QueryModal({ query, systems, schedules, onSave, onClose }) {
+  const [errors, setErrors] = useState([]);
+  const [saving, setSaving] = useState(false);
+  
   const [form, setForm] = useState(() => ({
     name: query?.name || "",
     src_system_id: query?.src_system_id || (systems[0]?.id || 1),
@@ -46,7 +49,37 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
   }, [query?.id]);
   
   const handleSave = async () => {
-    await onSave(form, selectedSchedules, tags);
+    setErrors([]);
+    setSaving(true);
+    
+    try {
+      await onSave(form, selectedSchedules, tags);
+    } catch (err) {
+      const errorMessages = [];
+      if (err.response) {
+        const data = err.response;
+        if (Array.isArray(data)) {
+          data.forEach(e => {
+            const field = e.loc?.slice(-1)[0] || 'field';
+            errorMessages.push(e.msg?.replace('Value error, ', '') || `Invalid ${field}`);
+          });
+        } else if (data.detail) {
+          if (Array.isArray(data.detail)) {
+            data.detail.forEach(e => {
+              const field = e.loc?.slice(-1)[0] || 'field';
+              errorMessages.push(e.msg?.replace('Value error, ', '') || `Invalid ${field}`);
+            });
+          } else {
+            errorMessages.push(data.detail);
+          }
+        } else if (data.message) {
+          errorMessages.push(data.message);
+        }
+      }
+      setErrors(errorMessages.length ? errorMessages : [err.message || 'Failed to save']);
+    } finally {
+      setSaving(false);
+    }
   };
   
   const toggleSchedule = (scheduleId) => {
@@ -79,6 +112,21 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
           <p className="text-gray-400 text-sm mt-1 mb-0">Configure a SQL query to compare data between two systems</p>
         </div>
         <div className="p-6 max-h-[75vh] overflow-y-auto">
+          {/* Error Display */}
+          {errors.length > 0 && (
+            <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded-lg">
+              <div className="flex items-start gap-2">
+                <span className="text-red-400 text-lg">⚠</span>
+                <div className="flex-1">
+                  <p className="text-red-400 font-medium text-sm mb-1">Please fix the following:</p>
+                  <ul className="text-red-300 text-sm list-disc list-inside space-y-0.5">
+                    {errors.map((err, i) => <li key={i}>{err}</li>)}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Basic Info Section */}
           <div className="mb-6 pb-6 border-b border-charcoal-200">
             <h4 className="text-rust-light font-semibold mb-3 text-base">Basic Information</h4>
@@ -196,7 +244,7 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
         
         <div className="border-t border-charcoal-200 px-6 py-4 flex gap-3 justify-end bg-charcoal-400">
           <button onClick={onClose} className="px-4 py-2.5 bg-charcoal-700 text-gray-200 border border-charcoal-200 rounded-md cursor-pointer hover:bg-charcoal-600 font-medium">Cancel</button>
-          <button onClick={handleSave} className="px-4 py-2.5 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 font-medium shadow-lg">💾 Save Query</button>
+          <button onClick={handleSave} disabled={saving} className="px-4 py-2.5 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">{saving ? 'Saving...' : '💾 Save Query'}</button>
         </div>
       </div>
     </div>

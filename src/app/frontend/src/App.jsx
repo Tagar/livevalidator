@@ -338,14 +338,15 @@ export default function App() {
       refreshAll();
       setEditingTable(null);
     } catch (err) {
-      if (err.message.includes("409") || err.message.includes("version_conflict")) {
+      if (err.message.includes("version_conflict")) {
         setConflict({
           row: editingTable, 
           onRefresh: () => { refreshAll(); setConflict(null); setEditingTable(null); }, 
           onCancel: () => setConflict(null)
         });
       } else {
-        alert(`Error: ${err.message}`);
+        // Re-throw so modal can display validation errors nicely
+        throw err;
       }
     }
   };
@@ -395,14 +396,15 @@ export default function App() {
       refreshAll();
       setEditingQuery(null);
     } catch (err) {
-      if (err.message.includes("409") || err.message.includes("version_conflict")) {
+      if (err.message.includes("version_conflict")) {
         setConflict({
           row: editingQuery, 
           onRefresh: () => { refreshAll(); setConflict(null); setEditingQuery(null); }, 
           onCancel: () => setConflict(null)
         });
       } else {
-        alert(`Error: ${err.message}`);
+        // Re-throw so modal can display validation errors nicely
+        throw err;
       }
     }
   };

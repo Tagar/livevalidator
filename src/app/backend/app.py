@@ -327,6 +327,38 @@ async def handle_os_error(request: Request, exc: OSError):
         )
     raise exc  # Re-raise if not a connection error
 
+@app.exception_handler(asyncpg.exceptions.UniqueViolationError)
+async def handle_unique_violation(request: Request, exc: asyncpg.exceptions.UniqueViolationError):
+    """Catch duplicate key errors and return friendly message."""
+    detail = str(exc)
+    # Extract the constraint name and value for a cleaner message
+    if "already exists" in detail:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": "A record with this name already exists",
+                "error": "duplicate_name",
+                "message": detail
+            }
+        )
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "Duplicate record", "message": detail}
+    )
+
+@app.exception_handler(asyncpg.exceptions.ForeignKeyViolationError)
+async def handle_foreign_key_violation(request: Request, exc: asyncpg.exceptions.ForeignKeyViolationError):
+    """Catch foreign key errors (e.g., invalid system ID)."""
+    detail = str(exc)
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": "Invalid reference",
+            "error": "invalid_foreign_key",
+            "message": "One or more referenced records do not exist (e.g., system ID)"
+        }
+    )
+
 # ---------- Helpers ----------
 def get_user_email() -> str:
     """Get current user email from context (set by middleware)"""
@@ -500,6 +532,19 @@ async def create_table(body: TableIn):
     user_email = get_user_email()
     await require_role('CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE')
     
+    # Validate systems exist
+    src_sys = await fetchrow("SELECT id FROM control.systems WHERE id = $1", body.src_system_id)
+    if not src_sys:
+        raise HTTPException(400, f"Source system ID {body.src_system_id} does not exist")
+    tgt_sys = await fetchrow("SELECT id FROM control.systems WHERE id = $1", body.tgt_system_id)
+    if not tgt_sys:
+        raise HTTPException(400, f"Target system ID {body.tgt_system_id} does not exist")
+    
+    # Check for duplicate name
+    existing = await fetchrow("SELECT id FROM control.datasets WHERE name = $1", body.name)
+    if existing:
+        raise HTTPException(409, f"A table with name '{body.name}' already exists")
+    
     row = await fetchrow("""
         INSERT INTO control.datasets (
           name, src_system_id, src_schema, src_table,
@@ -525,6 +570,22 @@ async def update_table(id: int, body: TableUpdate):
     user_email = get_user_email()
     if not await can_edit_object(user_email, 'tables', id):
         raise HTTPException(403, "You don't have permission to edit this table")
+    
+    # If renaming, check for duplicate name (exclude current record)
+    if body.name:
+        existing = await fetchrow("SELECT id FROM control.datasets WHERE name = $1 AND id != $2", body.name, id)
+        if existing:
+            raise HTTPException(409, f"A table with name '{body.name}' already exists")
+    
+    # Validate systems exist if being changed
+    if body.src_system_id:
+        src_sys = await fetchrow("SELECT id FROM control.systems WHERE id = $1", body.src_system_id)
+        if not src_sys:
+            raise HTTPException(400, f"Source system ID {body.src_system_id} does not exist")
+    if body.tgt_system_id:
+        tgt_sys = await fetchrow("SELECT id FROM control.systems WHERE id = $1", body.tgt_system_id)
+        if not tgt_sys:
+            raise HTTPException(400, f"Target system ID {body.tgt_system_id} does not exist")
     
     row = await fetchrow("""
         UPDATE control.datasets SET
@@ -740,6 +801,19 @@ async def create_query(body: QueryIn):
     user_email = get_user_email()
     await require_role('CAN_RUN', 'CAN_EDIT', 'CAN_MANAGE')
     
+    # Validate systems exist
+    src_sys = await fetchrow("SELECT id FROM control.systems WHERE id = $1", body.src_system_id)
+    if not src_sys:
+        raise HTTPException(400, f"Source system ID {body.src_system_id} does not exist")
+    tgt_sys = await fetchrow("SELECT id FROM control.systems WHERE id = $1", body.tgt_system_id)
+    if not tgt_sys:
+        raise HTTPException(400, f"Target system ID {body.tgt_system_id} does not exist")
+    
+    # Check for duplicate name
+    existing = await fetchrow("SELECT id FROM control.compare_queries WHERE name = $1", body.name)
+    if existing:
+        raise HTTPException(409, f"A query with name '{body.name}' already exists")
+    
     row = await fetchrow("""
         INSERT INTO control.compare_queries (
           name, src_system_id, tgt_system_id, sql,
@@ -763,6 +837,22 @@ async def update_query(id: int, body: QueryUpdate):
     user_email = get_user_email()
     if not await can_edit_object(user_email, 'queries', id):
         raise HTTPException(403, "You don't have permission to edit this query")
+    
+    # If renaming, check for duplicate name (exclude current record)
+    if body.name:
+        existing = await fetchrow("SELECT id FROM control.compare_queries WHERE name = $1 AND id != $2", body.name, id)
+        if existing:
+            raise HTTPException(409, f"A query with name '{body.name}' already exists")
+    
+    # Validate systems exist if being changed
+    if body.src_system_id:
+        src_sys = await fetchrow("SELECT id FROM control.systems WHERE id = $1", body.src_system_id)
+        if not src_sys:
+            raise HTTPException(400, f"Source system ID {body.src_system_id} does not exist")
+    if body.tgt_system_id:
+        tgt_sys = await fetchrow("SELECT id FROM control.systems WHERE id = $1", body.tgt_system_id)
+        if not tgt_sys:
+            raise HTTPException(400, f"Target system ID {body.tgt_system_id} does not exist")
     
     row = await fetchrow("""
         UPDATE control.compare_queries SET

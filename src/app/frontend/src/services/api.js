@@ -10,8 +10,9 @@ export async function apiCall(method, url, body) {
     let detail = text;
     let action = null;
     let message = null;
+    let parsed = null;
     try {
-      const parsed = JSON.parse(text);
+      parsed = JSON.parse(text);
       if (parsed.detail) detail = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail);
       if (parsed.action) action = parsed.action;
       if (parsed.message) message = parsed.message;
@@ -31,7 +32,11 @@ export async function apiCall(method, url, body) {
       throw new Error("403: Not able to access Databricks workspace, enable VPN if applicable.");
     }
     
-    throw new Error(`${res.status} ${res.statusText}: ${detail}`);
+    // Create error with response data for modals to parse
+    const err = new Error(`${res.status} ${res.statusText}: ${detail}`);
+    err.status = res.status;
+    err.response = parsed; // Attach parsed JSON for validation error handling
+    throw err;
   }
   return res.json();
 }

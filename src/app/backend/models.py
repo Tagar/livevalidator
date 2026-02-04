@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 class TableIn(BaseModel):
     name: str
     src_system_id: int
-    src_schema: Optional[str] = None
-    src_table: Optional[str] = None
+    src_schema: str
+    src_table: str
     tgt_system_id: int
     tgt_schema: Optional[str] = None
     tgt_table: Optional[str] = None
@@ -21,6 +21,13 @@ class TableIn(BaseModel):
     exclude_columns: list[str] = Field(default_factory=list)
     options: dict = Field(default_factory=dict)
     is_active: bool = True
+
+    @field_validator('name', 'src_schema', 'src_table')
+    @classmethod
+    def not_empty(cls, v: str, info) -> str:
+        if not v or not v.strip():
+            raise ValueError(f'{info.field_name} cannot be empty')
+        return v.strip()
 
 
 class TableUpdate(BaseModel):
@@ -77,6 +84,13 @@ class QueryIn(BaseModel):
     watermark_filter: Optional[str] = None
     options: dict = Field(default_factory=dict)
     is_active: bool = True
+
+    @field_validator('name', 'sql')
+    @classmethod
+    def not_empty(cls, v: str, info) -> str:
+        if not v or not v.strip():
+            raise ValueError(f'{info.field_name} cannot be empty')
+        return v.strip() if info.field_name == 'name' else v
 
 
 class QueryUpdate(BaseModel):
