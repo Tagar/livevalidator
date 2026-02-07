@@ -70,6 +70,7 @@ export function SystemModal({ system, onSave, onClose }) {
       driver_connector: system?.driver_connector || getDefaultDriver(initialKind),
       concurrency: system?.concurrency ?? -1,
       max_rows: system?.max_rows !== undefined ? system.max_rows : getDefaultMaxRows(initialKind),
+      options: (typeof system?.options === 'string' ? JSON.parse(system.options) : system?.options) || {jdbc: {}},
       version: system?.version || 0
     };
   });
@@ -195,6 +196,31 @@ export function SystemModal({ system, onSave, onClose }) {
                   <label className="block mb-1 font-medium text-gray-400 text-sm">Pass Secret Key</label>
                   <input value={form.pass_secret_key} onChange={e=>setForm({...form, pass_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="password-key" />
                 </div>
+              </div>
+              
+              <div className="mb-3">
+                <label className="block mb-1 font-medium text-gray-400 text-sm">JDBC Options</label>
+                <div className="space-y-2">
+                  {Object.entries(form.options.jdbc || {}).map(([key, val], idx) => (
+                    <div key={idx} className="flex gap-2">
+                      <input value={key} onChange={e => {
+                        const newJdbc = {...(form.options.jdbc || {})};
+                        const oldVal = newJdbc[key];
+                        delete newJdbc[key];
+                        newJdbc[e.target.value] = oldVal;
+                        setForm({...form, options: {...form.options, jdbc: newJdbc}});
+                      }} placeholder="key" className="flex-1 px-2 py-1 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                      <input value={val} onChange={e => setForm({...form, options: {...form.options, jdbc: {...(form.options.jdbc || {}), [key]: e.target.value}}})} placeholder="value" className="flex-1 px-2 py-1 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                      <button type="button" onClick={() => {
+                        const newJdbc = {...(form.options.jdbc || {})};
+                        delete newJdbc[key];
+                        setForm({...form, options: {...form.options, jdbc: newJdbc}});
+                      }} className="px-2 py-1 text-red-400 hover:text-red-300 text-sm">✕</button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setForm({...form, options: {...form.options, jdbc: {...(form.options.jdbc || {}), '': ''}}})} className="text-xs text-purple-400 hover:text-purple-300">+ Add Option</button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Key-value pairs passed to Spark JDBC (e.g., sessionInitStatement, fetchsize)</p>
               </div>
               
               {/* Standard types: optional JDBC override */}

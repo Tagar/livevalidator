@@ -2649,7 +2649,7 @@ async def create_system(body: SystemIn):
     body.driver_connector.strip() if body.driver_connector else None,
     body.concurrency,
     body.max_rows,
-    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email)
+    json.dumps(body.options) if body.options else '{}', body.is_active, user_email)
     return dict(row)
 
 @api.get("/systems/{id}")
@@ -2691,7 +2691,7 @@ async def update_system(id: int, body: SystemUpdate):
     id, body.name, body.kind, body.catalog, body.host, body.port, body.database,
     body.secret_scope, body.user_secret_key, body.pass_secret_key, body.jdbc_string, body.driver_connector, body.concurrency,
     body.max_rows,
-    json.dumps(body.options) if isinstance(body.options, (dict, list)) else body.options, body.is_active, user_email, body.version)
+    json.dumps(body.options) if body.options else '{}', body.is_active, user_email, body.version)
     if not row:
         current = await fetchrow("SELECT * FROM control.systems WHERE id=$1", id)
         raise HTTPException(status_code=409, detail={"error":"version_conflict", "current": dict(current) if current else None})

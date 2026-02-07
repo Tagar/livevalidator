@@ -55,6 +55,14 @@ export function SystemsView({
                         <strong>Max Rows:</strong> {row.max_rows.toLocaleString()}
                       </p>
                     )}
+                    {(() => {
+                      const opts = typeof row.options === 'string' ? JSON.parse(row.options) : row.options;
+                      return opts?.jdbc && Object.keys(opts.jdbc).length > 0 && (
+                        <p className="text-gray-400 text-sm mb-1">
+                          <strong>JDBC Options:</strong> {Object.keys(opts.jdbc).length}
+                        </p>
+                      );
+                    })()}
                   </>
                 )}
                 

@@ -137,6 +137,7 @@ export default function App() {
   // Auto-refresh for validation results and queue views
   useEffect(() => {
     if (view === 'results' && !validations.error) {
+      validations.refresh();
       const interval = setInterval(() => {
         validations.refresh();
       }, 5000);
@@ -146,6 +147,8 @@ export default function App() {
   
   useEffect(() => {
     if (view === 'queue') {
+      triggers.refresh();
+      queueStats.refresh();
       const interval = setInterval(() => {
         triggers.refresh();
         queueStats.refresh();

@@ -3,6 +3,7 @@ from typing import Any
 from pyspark.sql import DataFrame, SparkSession
 from databricks.sdk.runtime import dbutils
 
+import json
 import sys
 import os
 sys.path.append(os.path.abspath('.'))
@@ -53,9 +54,17 @@ def query_jdbc(conn_info: dict, query: str) -> DataFrame:
     if not driver:
         raise ValueError(f"JDBC driver not set for system: {conn_info['system']['name']}")
     
-    return spark.read.format("jdbc") \
+    reader = spark.read.format("jdbc") \
         .option("url", conn_info["jdbc_string"]).option("driver", driver).option("query", query) \
-        .option("user", conn_info.get("username")).option("password", conn_info.get("password")).load()
+        .option("user", conn_info.get("username")).option("password", conn_info.get("password"))
+    
+    options = conn_info["system"].get("options") or {}
+    if isinstance(options, str):
+        options = json.loads(options)
+    for key, val in options.get("jdbc", {}).items():
+        reader = reader.option(key, val)
+    
+    return reader.load()
 
 def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
     """Get column names and types for a table"""
