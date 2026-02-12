@@ -488,7 +488,14 @@ async def list_tables(q: Optional[str] = None):
                      JOIN control.tags t ON et.tag_id = t.id
                      WHERE et.entity_type = 'table' AND et.entity_id = d.id),
                     '[]'::json
-                ) as tags
+                ) as tags,
+                COALESCE(
+                    (SELECT json_agg(s.name ORDER BY s.name)
+                     FROM control.schedule_bindings sb
+                     JOIN control.schedules s ON sb.schedule_id = s.id
+                     WHERE sb.entity_type = 'table' AND sb.entity_id = d.id),
+                    '[]'::json
+                ) as schedules
             FROM control.datasets d
             LEFT JOIN LATERAL (
                 SELECT id, status, finished_at, error_message
@@ -514,7 +521,14 @@ async def list_tables(q: Optional[str] = None):
                      JOIN control.tags t ON et.tag_id = t.id
                      WHERE et.entity_type = 'table' AND et.entity_id = d.id),
                     '[]'::json
-                ) as tags
+                ) as tags,
+                COALESCE(
+                    (SELECT json_agg(s.name ORDER BY s.name)
+                     FROM control.schedule_bindings sb
+                     JOIN control.schedules s ON sb.schedule_id = s.id
+                     WHERE sb.entity_type = 'table' AND sb.entity_id = d.id),
+                    '[]'::json
+                ) as schedules
             FROM control.datasets d
             LEFT JOIN LATERAL (
                 SELECT id, status, finished_at, error_message
@@ -757,7 +771,14 @@ async def list_queries(q: Optional[str] = None):
                      JOIN control.tags t ON et.tag_id = t.id
                      WHERE et.entity_type = 'query' AND et.entity_id = cq.id),
                     '[]'::json
-                ) as tags
+                ) as tags,
+                COALESCE(
+                    (SELECT json_agg(s.name ORDER BY s.name)
+                     FROM control.schedule_bindings sb
+                     JOIN control.schedules s ON sb.schedule_id = s.id
+                     WHERE sb.entity_type = 'compare_query' AND sb.entity_id = cq.id),
+                    '[]'::json
+                ) as schedules
             FROM control.compare_queries cq
             LEFT JOIN LATERAL (
                 SELECT id, status, finished_at, error_message
@@ -783,7 +804,14 @@ async def list_queries(q: Optional[str] = None):
                      JOIN control.tags t ON et.tag_id = t.id
                      WHERE et.entity_type = 'query' AND et.entity_id = cq.id),
                     '[]'::json
-                ) as tags
+                ) as tags,
+                COALESCE(
+                    (SELECT json_agg(s.name ORDER BY s.name)
+                     FROM control.schedule_bindings sb
+                     JOIN control.schedules s ON sb.schedule_id = s.id
+                     WHERE sb.entity_type = 'compare_query' AND sb.entity_id = cq.id),
+                    '[]'::json
+                ) as schedules
             FROM control.compare_queries cq
             LEFT JOIN LATERAL (
                 SELECT id, status, finished_at, error_message
@@ -1083,6 +1111,12 @@ async def bind_schedule(body: BindingIn):
 @api.get("/bindings/{entity_type}/{entity_id}")
 async def list_bindings(entity_type: str, entity_id: int):
     rows = await fetch("SELECT * FROM control.schedule_bindings WHERE entity_type=$1 AND entity_id=$2", entity_type, entity_id)
+    return [dict(r) for r in rows]
+
+@api.get("/bindings/all")
+async def list_all_bindings():
+    """Bulk fetch all bindings - avoids N+1 queries from frontend."""
+    rows = await fetch("SELECT * FROM control.schedule_bindings ORDER BY entity_type, entity_id")
     return [dict(r) for r in rows]
 
 @api.get("/bindings_by_sched/{schedule_id}")
@@ -1786,6 +1820,8 @@ async def list_validation_history(
     
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
     
+    # NOTE: sample_differences excluded to reduce payload size (~15MB -> ~1MB for 2500 rows).
+    # Frontend fetches full details via GET /validation-history/{id} when user clicks to view.
     rows = await fetch(f"""
         SELECT 
             vh.id, vh.trigger_id, vh.entity_type, vh.entity_id, vh.entity_name,
@@ -1796,29 +1832,48 @@ async def list_validation_history(
             vh.status, vh.schema_match, vh.row_count_match,
             vh.row_count_source, vh.row_count_target,
             vh.rows_compared, vh.rows_different, vh.difference_pct,
-            vh.compare_mode, vh.sample_differences, vh.error_message, vh.databricks_run_url,
-            COALESCE(
-                (SELECT json_agg(t.name ORDER BY t.name)
-                 FROM control.entity_tags et
-                 JOIN control.tags t ON et.tag_id = t.id
-                 WHERE et.entity_type = CASE 
-                     WHEN vh.entity_type = 'table' THEN 'table'
-                     WHEN vh.entity_type = 'compare_query' THEN 'query'
-                     ELSE vh.entity_type
-                 END AND et.entity_id = vh.entity_id),
-                '[]'::json
-            ) as tags
+            vh.compare_mode, vh.error_message, vh.databricks_run_url
         FROM control.validation_history vh
         {where_clause}
         ORDER BY vh.finished_at DESC
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """, *params, limit, offset)
     
-    results = []
-    for r in rows:
-        d = dict(r)
-        d["sample_differences"] = _transform_pk_samples_to_legacy(d.get("sample_differences"))
-        results.append(d)
+    results = [dict(r) for r in rows]
+    
+    # Batch fetch tags for all unique entities
+    if results:
+        table_ids = list(set(r['entity_id'] for r in results if r['entity_type'] == 'table'))
+        query_ids = list(set(r['entity_id'] for r in results if r['entity_type'] == 'compare_query'))
+        
+        tags_by_entity: dict[tuple[str, int], list] = {}
+        
+        if table_ids:
+            tag_rows = await fetch("""
+                SELECT et.entity_id, json_agg(t.name ORDER BY t.name) as tags
+                FROM control.entity_tags et
+                JOIN control.tags t ON et.tag_id = t.id
+                WHERE et.entity_type = 'table' AND et.entity_id = ANY($1)
+                GROUP BY et.entity_id
+            """, table_ids)
+            for tr in tag_rows:
+                tags_by_entity[('table', tr['entity_id'])] = tr['tags'] or []
+        
+        if query_ids:
+            tag_rows = await fetch("""
+                SELECT et.entity_id, json_agg(t.name ORDER BY t.name) as tags
+                FROM control.entity_tags et
+                JOIN control.tags t ON et.tag_id = t.id
+                WHERE et.entity_type = 'query' AND et.entity_id = ANY($1)
+                GROUP BY et.entity_id
+            """, query_ids)
+            for tr in tag_rows:
+                tags_by_entity[('query', tr['entity_id'])] = tr['tags'] or []
+        
+        for r in results:
+            tag_key = ('table', r['entity_id']) if r['entity_type'] == 'table' else ('query', r['entity_id'])
+            r['tags'] = tags_by_entity.get(tag_key, [])
+    
     return results
 
 @api.get("/validation-history/{id}")

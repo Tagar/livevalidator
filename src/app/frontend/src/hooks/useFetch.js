@@ -11,7 +11,6 @@ export function useFetch(url, deps = []) {
   const hasLoadedOnce = useRef(false);
   
   const refresh = () => {
-    // Only set loading=true on initial load, not on refreshes
     if (!hasLoadedOnce.current) {
       setLoading(true);
     }
@@ -28,14 +27,12 @@ export function useFetch(url, deps = []) {
             if (parsed.message) message = parsed.message;
           } catch {}
           
-          // If this is a setup_required error, throw a special error
           if (action === "setup_required") {
             const err = new Error(message || "Database not initialized");
             err.action = "setup_required";
             throw err;
           }
           
-          // Check for Databricks VPN error
           if (r.status === 403 && text.includes("Public access is not allowed for workspace")) {
             throw new Error("Not able to access Databricks workspace. Please enable VPN if applicable.");
           }
@@ -44,7 +41,7 @@ export function useFetch(url, deps = []) {
         }
         return r.json();
       })
-      .then(setData)
+      .then(d => setData(d))
       .catch((e) => setError(e instanceof Error ? e : new Error(String(e))))
       .finally(() => {
         setLoading(false);

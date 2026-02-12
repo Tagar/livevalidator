@@ -10,7 +10,6 @@ export function QueriesView({
   error, 
   systems,
   schedules,
-  bindings,
   onEdit, 
   onDelete, 
   onTrigger,
@@ -457,8 +456,7 @@ export function QueriesView({
               </thead>
               <tbody>
               {filteredData.map(row => {
-                const entityBindings = bindings[`compare_query_${row.id}`] || [];
-                const scheduleNames = entityBindings.map(b => schedules.find(s => s.id === b.schedule_id)?.name).filter(Boolean).join(', ');
+                const scheduleNames = Array.isArray(row.schedules) ? row.schedules.join(', ') : '';
                 const isExpanded = expandedRowId === row.id;
                 const isSelected = selectedIds.has(row.id);
                 

@@ -10,7 +10,6 @@ export function TablesView({
   error, 
   systems,
   schedules,
-  bindings,
   onEdit, 
   onDelete, 
   onTrigger,
@@ -453,8 +452,7 @@ export function TablesView({
               </thead>
               <tbody>
               {filteredData.map(row => {
-                const entityBindings = bindings[`dataset_${row.id}`] || [];
-                const scheduleNames = entityBindings.map(b => schedules.find(s => s.id === b.schedule_id)?.name).filter(Boolean).join(', ');
+                const scheduleNames = Array.isArray(row.schedules) ? row.schedules.join(', ') : '';
                 const srcTable = `${row.src_schema}.${row.src_table}`;
                 const tgtTable = `${row.tgt_schema}.${row.tgt_table}`;
                 const tablesMatch = srcTable === tgtTable;

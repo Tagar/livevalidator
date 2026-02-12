@@ -24,6 +24,7 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedSample, setSelectedSample] = useState(null);
+  const [loadingSampleId, setLoadingSampleId] = useState(null);
   const highlightedRowRef = useRef(null);
   const tagInputRef = useRef(null);
   const inputElementRef = useRef(null);
@@ -41,6 +42,23 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
       }
     }
     return [];
+  };
+
+  // Fetch full validation details on click (sample_differences excluded from list endpoint
+  // to reduce payload from ~15MB to ~1MB - fetched on-demand here instead)
+  const handleViewSample = async (validation) => {
+    setLoadingSampleId(validation.id);
+    try {
+      const res = await fetch(`/api/validation-history/${validation.id}`);
+      if (res.ok) {
+        const detail = await res.json();
+        setSelectedSample(detail);
+      }
+    } catch (e) {
+      console.error('Failed to fetch validation details:', e);
+    } finally {
+      setLoadingSampleId(null);
+    }
   };
 
   // Scroll to and highlight the row when highlightId changes
@@ -249,7 +267,11 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
   }, []);
 
   const filteredAndSortedData = useMemo(() => {
-    let result = [...data];
+    // Pre-parse tags and attach to avoid repeated JSON.parse
+    let result = data.map(v => ({
+      ...v,
+      _parsedTags: parseTags(v.tags),
+    }));
 
     // Apply date filters
     if (dateFrom) {
@@ -263,9 +285,8 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
 
     // Apply filters
     if (filters.entity_name) {
-      result = result.filter(v => 
-        v.entity_name.toLowerCase().includes(filters.entity_name.toLowerCase())
-      );
+      const searchTerm = filters.entity_name.toLowerCase();
+      result = result.filter(v => v.entity_name.toLowerCase().includes(searchTerm));
     }
     if (filters.entity_type) {
       result = result.filter(v => v.entity_type === filters.entity_type);
@@ -281,10 +302,7 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
     
     // Apply tag filter (AND logic - must have all selected tags)
     if (filterTags.length > 0) {
-      result = result.filter(v => {
-        const rowTags = parseTags(v.tags);
-        return filterTags.every(filterTag => rowTags.includes(filterTag));
-      });
+      result = result.filter(v => filterTags.every(filterTag => v._parsedTags.includes(filterTag)));
     }
 
     // Apply sorting
@@ -336,6 +354,21 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
     return result;
   }, [data, filters, filterTags, sortConfig, dateFrom, dateTo]);
 
+  // Single-pass summary stats calculation
+  const summaryStats = useMemo(() => {
+    let succeeded = 0, failed = 0, errors = 0, totalDuration = 0;
+    for (const v of filteredAndSortedData) {
+      if (v.status === 'succeeded') succeeded++;
+      else if (v.status === 'failed') failed++;
+      else if (v.status === 'error') errors++;
+      totalDuration += v.duration_seconds || 0;
+    }
+    const avgDuration = filteredAndSortedData.length > 0 
+      ? (totalDuration / filteredAndSortedData.length / 60).toFixed(1) 
+      : '0';
+    return { succeeded, failed, errors, avgDuration, total: filteredAndSortedData.length };
+  }, [filteredAndSortedData]);
+
   return (
     <>
       {error && error.action !== "setup_required" && <ErrorBox message={error.message} onClose={onClearError} />}
@@ -358,38 +391,28 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
       <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
         <div className="bg-charcoal-500 border border-charcoal-200 rounded-lg p-2.5">
           <div className="text-gray-400 text-sm mb-0.5">Total Validations</div>
-          <div className="text-3xl font-bold text-gray-100">{filteredAndSortedData.length}</div>
-          {filteredAndSortedData.length > 9500 && (
+          <div className="text-3xl font-bold text-gray-100">{summaryStats.total}</div>
+          {summaryStats.total > 9500 && (
             <div className="mt-2 px-2 py-1 bg-red-900/40 border border-red-700 rounded text-red-300 text-xs">
-              Results pane almost full ({filteredAndSortedData.length}/10000). Delete unneeded records
+              Results pane almost full ({summaryStats.total}/10000). Delete unneeded records
             </div>
           )}
         </div>
         <div className="bg-green-900/20 border border-green-700 rounded-lg p-2.5">
           <div className="text-green-400 text-sm mb-0.5">✓ Succeeded</div>
-          <div className="text-3xl font-bold text-green-300">
-            {filteredAndSortedData.filter(v => v.status === 'succeeded').length}
-          </div>
+          <div className="text-3xl font-bold text-green-300">{summaryStats.succeeded}</div>
         </div>
         <div className="bg-red-900/20 border border-red-700 rounded-lg p-2.5">
           <div className="text-red-400 text-sm mb-0.5">✗ Failed</div>
-          <div className="text-3xl font-bold text-red-300">
-            {filteredAndSortedData.filter(v => v.status === 'failed').length}
-          </div>
+          <div className="text-3xl font-bold text-red-300">{summaryStats.failed}</div>
         </div>
         <div className="bg-orange-900/20 border border-orange-700 rounded-lg p-2.5">
           <div className="text-orange-400 text-sm mb-0.5">⚠ Errors</div>
-          <div className="text-3xl font-bold text-orange-300">
-            {filteredAndSortedData.filter(v => v.status === 'error').length}
-          </div>
+          <div className="text-3xl font-bold text-orange-300">{summaryStats.errors}</div>
         </div>
         <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-2.5">
           <div className="text-purple-400 text-sm mb-0.5">Avg Duration</div>
-          <div className="text-3xl font-bold text-purple-300">
-            {filteredAndSortedData.length > 0 
-              ? ((filteredAndSortedData.reduce((sum, v) => sum + (v.duration_seconds || 0), 0) / filteredAndSortedData.length) / 60).toFixed(1)
-              : 0}m
-          </div>
+          <div className="text-3xl font-bold text-purple-300">{summaryStats.avgDuration}m</div>
         </div>
       </div>
 
@@ -541,7 +564,8 @@ export function ValidationResultsView({ data, loading, error, onClearError, high
 
           <ValidationResultsTable
             data={filteredAndSortedData}
-            onViewSample={setSelectedSample}
+            onViewSample={handleViewSample}
+            loadingSampleId={loadingSampleId}
             onEntityClick={onNavigateToEntity}
             showCheckboxes={true}
             selectedIds={selectedIds}

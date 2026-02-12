@@ -36,43 +36,13 @@ function ErrorPopover({ error, onClose }) {
   );
 }
 
-// Helper to safely parse tags
-const parseTags = (tags) => {
-  if (!tags) return [];
-  if (Array.isArray(tags)) return tags;
-  if (typeof tags === 'string') {
-    try {
-      const parsed = JSON.parse(tags);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
-
 /**
  * Reusable validation results table component
- * 
- * @param {Object} props
- * @param {Array} props.data - Array of validation result objects
- * @param {Function} props.onViewSample - Callback when clicking diff count (receives validation object)
- * @param {Function} props.onEntityClick - Callback when clicking entity name (receives entityType, entityId)
- * @param {boolean} props.showCheckboxes - Whether to show row selection checkboxes
- * @param {Array} props.selectedIds - Array of selected row IDs (required if showCheckboxes)
- * @param {Function} props.onToggleSelect - Callback for toggling row selection (required if showCheckboxes)
- * @param {Function} props.onToggleSelectAll - Callback for toggling all rows (required if showCheckboxes)
- * @param {number} props.highlightId - ID of row to highlight
- * @param {React.Ref} props.highlightedRowRef - Ref for highlighted row
- * @param {boolean} props.sortable - Whether columns are sortable
- * @param {Object} props.sortConfig - Current sort config { key, direction }
- * @param {Function} props.onSort - Callback for sorting (receives column key)
- * @param {string} props.emptyMessage - Message to show when no data
- * @param {number} props.maxHeight - Max height in px (default 500)
  */
 export function ValidationResultsTable({
   data,
   onViewSample,
+  loadingSampleId = null,
   onEntityClick,
   showCheckboxes = false,
   selectedIds = [],
@@ -193,7 +163,7 @@ export function ValidationResultsTable({
                   </span>
                 </td>
                 <td className="px-2 py-1.5">
-                  <TagList tags={parseTags(v.tags)} maxVisible={4} />
+                  <TagList tags={v._parsedTags || []} maxVisible={4} />
                 </td>
                 <td className="px-2 py-1.5">
                   {v.status === 'succeeded' ? (
@@ -225,6 +195,8 @@ export function ValidationResultsTable({
                     <span className="text-gray-500">-</span>
                   ) : v.row_count_match ? (
                     <span className="text-green-400">✓ {v.row_count_source?.toLocaleString()}</span>
+                  ) : loadingSampleId === v.id ? (
+                    <span className="text-gray-400 text-xs">Loading...</span>
                   ) : (
                     <button
                       onClick={() => onViewSample?.(v)}
@@ -239,13 +211,17 @@ export function ValidationResultsTable({
                   {v.rows_different == null ? (
                     <span className="text-gray-500">-</span>
                   ) : v.rows_different > 0 ? (
-                    <button
-                      onClick={() => onViewSample?.(v)}
-                      className="text-red-400 font-medium hover:text-red-300 underline decoration-dotted cursor-pointer transition-colors"
-                      title="Click to view sample differences"
-                    >
-                      {v.rows_different.toLocaleString()} ({v.difference_pct}%)
-                    </button>
+                    loadingSampleId === v.id ? (
+                      <span className="text-gray-400 text-xs">Loading...</span>
+                    ) : (
+                      <button
+                        onClick={() => onViewSample?.(v)}
+                        className="text-red-400 font-medium hover:text-red-300 underline decoration-dotted cursor-pointer transition-colors"
+                        title="Click to view sample differences"
+                      >
+                        {v.rows_different.toLocaleString()} ({v.difference_pct}%)
+                      </button>
+                    )
                   ) : (
                     <span className="text-green-400">0</span>
                   )}

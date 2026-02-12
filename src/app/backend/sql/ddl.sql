@@ -214,6 +214,7 @@ CREATE TABLE IF NOT EXISTS control.validation_history (
 -- Indexes for common queries
 CREATE INDEX IF NOT EXISTS validation_history_entity_idx ON control.validation_history (entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS validation_history_time_idx ON control.validation_history (finished_at DESC);
+CREATE INDEX IF NOT EXISTS validation_history_requested_at_idx ON control.validation_history (requested_at DESC);
 CREATE INDEX IF NOT EXISTS validation_history_status_idx ON control.validation_history (status);
 CREATE INDEX IF NOT EXISTS validation_history_schedule_idx ON control.validation_history (schedule_id) WHERE schedule_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS validation_history_created_at_idx ON control.validation_history (created_at DESC);
@@ -231,6 +232,9 @@ CREATE TABLE IF NOT EXISTS control.entity_tags (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (entity_type, entity_id, tag_id)
 );
+
+-- Index for fast tag lookups by entity (used in validation-history query)
+CREATE INDEX IF NOT EXISTS entity_tags_entity_idx ON control.entity_tags (entity_type, entity_id);
 
 -- 9) Global validation configuration (singleton table)
 CREATE TABLE IF NOT EXISTS control.validation_config (

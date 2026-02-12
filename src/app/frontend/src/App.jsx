@@ -107,6 +107,7 @@ const InlineEditCell = ({ value, onSave, onCancel, type = "text", options = [] }
 
 export default function App() {
   const [view, setView] = useState('results');
+  const prevView = useRef(view);
   const [conflict, setConflict] = useState(null);
   const [notification, setNotification] = useState(null); // { type: 'success' | 'error', message: string }
   const showNotification = (message, type = 'success', details = null) => {
@@ -125,24 +126,24 @@ export default function App() {
       .catch(err => console.error('Failed to fetch current user:', err));
   }, []);
   
-  // Data fetching
+  // Data fetching (validation-history first as it's the default view)
+  const validations = useFetch(`/api/validation-history?days_back=7&limit=10000`, []);
   const tbl = useFetch(`/api/tables`, []);
   const qs = useFetch(`/api/queries`, []);
   const sc = useFetch(`/api/schedules`, []);
   const sys = useFetch(`/api/systems`, []);
-  const validations = useFetch(`/api/validation-history?days_back=7&limit=10000`, []);
   const triggers = useFetch(`/api/triggers`, []);
   const queueStats = useFetch(`/api/queue-status`, {});
   
-  // Auto-refresh for validation results and queue views
+  // Auto-refresh for validation results (refresh on nav, then every 5s)
   useEffect(() => {
     if (view === 'results' && !validations.error) {
-      validations.refresh();
-      const interval = setInterval(() => {
-        validations.refresh();
-      }, 5000);
+      if (prevView.current !== 'results') validations.refresh();
+      prevView.current = view;
+      const interval = setInterval(() => validations.refresh(), 5000);
       return () => clearInterval(interval);
     }
+    prevView.current = view;
   }, [view, validations.error]);
   
   useEffect(() => {
@@ -162,9 +163,6 @@ export default function App() {
     err => err?.action === "setup_required"
   );
   
-  // Fetch bindings for all entities
-  const [bindings, setBindings] = useState({});
-
   // Modal/Edit states
   const [editingCell, setEditingCell] = useState(null);
   const [editingTable, setEditingTable] = useState(null);
@@ -178,55 +176,7 @@ export default function App() {
     qs.refresh(); 
     sc.refresh(); 
     sys.refresh();
-    fetchBindings();
   };
-  
-  // Fetch all bindings
-  const fetchBindings = async () => {
-    try {
-      // Fetch bindings for datasets
-      const datasetBindings = await Promise.all(
-        tbl.data.map(async (row) => {
-          try {
-            const binds = await fetch(`/api/bindings/table/${row.id}`).then(r => r.json());
-            return { entityType: 'dataset', entityId: row.id, bindings: binds };
-          } catch {
-            return { entityType: 'dataset', entityId: row.id, bindings: [] };
-          }
-        })
-      );
-      
-      // Fetch bindings for queries
-      const queryBindings = await Promise.all(
-        qs.data.map(async (row) => {
-          try {
-            const binds = await fetch(`/api/bindings/compare_query/${row.id}`).then(r => r.json());
-            return { entityType: 'compare_query', entityId: row.id, bindings: binds };
-          } catch {
-            return { entityType: 'compare_query', entityId: row.id, bindings: [] };
-          }
-        })
-      );
-      
-      // Organize bindings by entity
-      const bindingsMap = {};
-      [...datasetBindings, ...queryBindings].forEach(({ entityType, entityId, bindings }) => {
-        const key = `${entityType}_${entityId}`;
-        bindingsMap[key] = bindings;
-      });
-      
-      setBindings(bindingsMap);
-    } catch (err) {
-      console.error('Error fetching bindings:', err);
-    }
-  };
-  
-  // Fetch bindings when data loads
-  useEffect(() => {
-    if (tbl.data.length > 0 || qs.data.length > 0) {
-      fetchBindings();
-    }
-  }, [tbl.data.length, qs.data.length]);
 
   // Inline cell editing handler
   const handleCellEdit = async (type, row, field, newValue) => {
@@ -610,7 +560,6 @@ export default function App() {
             error={tbl.error}
             systems={sys.data}
             schedules={sc.data}
-            bindings={bindings}
             onEdit={setEditingTable}
             onDelete={handleDelete}
             onTrigger={triggerNow}
@@ -633,7 +582,6 @@ export default function App() {
             error={qs.error}
             systems={sys.data}
             schedules={sc.data}
-            bindings={bindings}
             onEdit={setEditingQuery}
             onDelete={handleDelete}
             onTrigger={triggerNow}
