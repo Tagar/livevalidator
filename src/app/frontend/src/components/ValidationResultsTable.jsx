@@ -13,10 +13,14 @@ function ErrorPopover({ error, onClose }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [onClose]);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(error || 'Unknown error');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(error || 'Unknown error');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
   };
 
   return (
@@ -67,13 +71,23 @@ export function ValidationResultsTable({
   const [errorModal, setErrorModal] = useState(null);
   const [copied, setCopied] = useState(false);
 
+  // Helper to safely parse arrays (tags may be JSON string or array)
+  const parseArray = (arr) => {
+    if (!arr) return [];
+    if (Array.isArray(arr)) return arr;
+    if (typeof arr === 'string') {
+      try { return JSON.parse(arr); } catch { return []; }
+    }
+    return [];
+  };
+
   // Copy table data to clipboard as TSV (paste into Excel/Sheets)
-  const handleCopyToClipboard = () => {
+  const handleCopyToClipboard = async () => {
     const headers = ['Entity', 'Type', 'Tags', 'Status', 'Duration (s)', 'Source', 'Target', 'Row Count Source', 'Row Count Target', 'Differences', 'Diff %', 'Triggered'];
     const rows = data.map(v => [
       v.entity_name,
       v.entity_type === 'table' ? 'Table' : 'Query',
-      (v._parsedTags || v.tags || []).join(', '),
+      parseArray(v._parsedTags || v.tags).join(', '),
       v.status,
       v.duration_seconds ?? '',
       v.source_system_name,
@@ -85,9 +99,24 @@ export function ValidationResultsTable({
       v.requested_at ? new Date(v.requested_at).toLocaleString() : ''
     ].join('\t'));
     const tsv = [headers.join('\t'), ...rows].join('\n');
-    navigator.clipboard.writeText(tsv);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(tsv);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+      // Fallback: create a temporary textarea
+      const textarea = document.createElement('textarea');
+      textarea.value = tsv;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const SortableHeader = ({ label, sortKey, className = "" }) => {
@@ -116,20 +145,22 @@ export function ValidationResultsTable({
   };
 
   return (
-    <div 
-      className={`relative overflow-x-auto overflow-y-auto ${fillHeight ? 'flex-1 min-h-0' : ''}`} 
-      style={maxHeight ? { maxHeight: `${maxHeight}px` } : undefined}
-    >
-      {/* Floating copy button (hidden when empty) */}
+    <div className={`relative ${fillHeight ? 'flex-1 min-h-0 flex flex-col' : ''}`} style={{ isolation: 'isolate' }}>
+      {/* Floating copy button */}
       {data.length > 0 && (
         <button
+          type="button"
           onClick={handleCopyToClipboard}
-          className="absolute top-10 right-2 z-10 p-1.5 text-gray-400 hover:text-white bg-charcoal-400/90 hover:bg-charcoal-300 rounded shadow transition-colors"
-          title="Copy"
+          className="absolute top-2 right-3 z-[100] p-1.5 text-gray-400 hover:text-white bg-charcoal-500 hover:bg-charcoal-400 rounded shadow-lg border border-charcoal-300 transition-colors cursor-pointer"
+          title="Copy to clipboard"
         >
           {copied ? <span className="text-green-400 text-xs px-0.5">✓</span> : <CopyIcon />}
         </button>
       )}
+      <div 
+        className={`overflow-x-auto overflow-y-auto ${fillHeight ? 'flex-1 min-h-0' : ''}`} 
+        style={maxHeight ? { maxHeight: `${maxHeight}px` } : undefined}
+      >
       <table className="w-full min-w-[1200px]">
         <thead className="sticky top-0 bg-charcoal-400 border-b border-charcoal-200">
           <tr>
@@ -287,6 +318,7 @@ export function ValidationResultsTable({
           )}
         </tbody>
       </table>
+      </div>
       {errorModal !== null && <ErrorPopover error={errorModal} onClose={() => setErrorModal(null)} />}
     </div>
   );

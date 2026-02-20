@@ -145,6 +145,23 @@ export function DashboardView({ data, loading, error, onNavigateToEntity }) {
   
   // Sample differences modal state
   const [selectedSample, setSelectedSample] = useState(null);
+  const [loadingSampleId, setLoadingSampleId] = useState(null);
+
+  // Fetch full validation details on click (sample_differences excluded from list endpoint)
+  const handleViewSample = async (validation) => {
+    setLoadingSampleId(validation.id);
+    try {
+      const res = await fetch(`/api/validation-history/${validation.id}`);
+      if (res.ok) {
+        const detail = await res.json();
+        setSelectedSample(detail);
+      }
+    } catch (e) {
+      console.error('Failed to fetch validation details:', e);
+    } finally {
+      setLoadingSampleId(null);
+    }
+  };
 
   // Compute time range from preset or custom
   const timeRange = useMemo(() => {
@@ -1030,8 +1047,8 @@ export function DashboardView({ data, loading, error, onNavigateToEntity }) {
       </div>
 
       {/* Results Table for Selected Chart */}
-      <div className="mb-6 bg-charcoal-500 border border-charcoal-200 rounded-lg">
-        <div className="p-3 bg-charcoal-400 border-b border-charcoal-200 flex items-center justify-between">
+      <div className="mb-6 bg-charcoal-500 border border-charcoal-200 rounded-lg overflow-visible">
+        <div className="p-3 bg-charcoal-400 border-b border-charcoal-200 rounded-t-lg flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2 flex-wrap">
               {selectedChartId === 'overall' ? (
@@ -1085,7 +1102,8 @@ export function DashboardView({ data, loading, error, onNavigateToEntity }) {
         
         <ValidationResultsTable
           data={drillDown ? drillDownEntities : latestPerEntity}
-          onViewSample={setSelectedSample}
+          onViewSample={handleViewSample}
+          loadingSampleId={loadingSampleId}
           onEntityClick={onNavigateToEntity}
           emptyMessage="No entities in this chart"
         />
