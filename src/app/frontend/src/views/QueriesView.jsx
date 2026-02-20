@@ -266,6 +266,55 @@ export function QueriesView({
   const allFilteredSelected = filteredData.length > 0 && filteredData.every(row => selectedIds.has(row.id));
   const someSelected = selectedIds.size > 0;
 
+  // Export CSV handler
+  const handleExportCSV = () => {
+    const rowsToExport = someSelected 
+      ? data.filter(row => selectedIds.has(row.id))
+      : data;
+    
+    if (rowsToExport.length === 0) return;
+
+    const headers = ['name', 'sql', 'source', 'target', 'schedule_name', 'is_active', 'compare_mode', 'pk_columns', 'tags'];
+    
+    const escapeCSV = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = String(val);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const rows = rowsToExport.map(row => {
+      const srcSystem = systems.find(s => s.id === row.src_system_id)?.name || '';
+      const tgtSystem = systems.find(s => s.id === row.tgt_system_id)?.name || '';
+      const scheduleNames = parseArray(row.schedules).join(',');
+      const pkCols = Array.isArray(row.pk_columns) ? row.pk_columns.join(',') : (row.pk_columns || '');
+      const tags = parseArray(row.tags).join(',');
+
+      return [
+        row.name,
+        row.sql,
+        srcSystem,
+        tgtSystem,
+        scheduleNames,
+        row.is_active ? 'true' : 'false',
+        row.compare_mode || 'except_all',
+        pkCols,
+        tags
+      ].map(escapeCSV).join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `queries_${timestamp}.csv`;
+    a.click();
+  };
+
   return (
     <>
       {error && error.action !== "setup_required" && <ErrorBox message={error.message} onClose={onClearError} />}
@@ -278,6 +327,9 @@ export function QueriesView({
       <div className="mb-3 flex gap-2">
         <button onClick={() => onEdit({})} className="px-3 py-2 text-base bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium">+ Add Query</button>
         <button onClick={onUploadCSV} className="px-3 py-2 text-base bg-rust text-gray-100 border-0 rounded-md cursor-pointer hover:bg-rust-light transition-colors font-medium">Upload CSV</button>
+        <button onClick={handleExportCSV} className="px-3 py-2 text-base bg-blue-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-blue-500 transition-colors font-medium">
+          {someSelected ? `Export Selected (${selectedIds.size})` : 'Export CSV'}
+        </button>
         <button onClick={onRefresh} className="px-3 py-2 text-base bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium ml-auto">Refresh</button>
       </div>
 
