@@ -3115,28 +3115,32 @@ async def delete_dashboard(id: int):
 
 
 @api.post("/dashboards/{id}/clone")
-async def clone_dashboard(id: int):
+async def clone_dashboard(id: int, body: dict = {}):
     """Clone a dashboard and all its charts."""
     user_email = get_user_email()
     source = await fetchrow("SELECT * FROM control.dashboards WHERE id=$1", id)
     if not source:
         raise HTTPException(404, "Dashboard not found")
 
+    clone_name = body.get('name') or f"{source['name']} (Copy)"
+    clone_project = body.get('project') or 'General'
+
     new_dash = await fetchrow("""
         INSERT INTO control.dashboards (name, project, time_range_preset, time_range_from, time_range_to, created_by, updated_by)
-        VALUES ($1, 'General', $2, $3, $4, $5, $5)
+        VALUES ($1, $2, $3, $4, $5, $6, $6)
         RETURNING *
-    """, f"{source['name']} (Copy)", source['time_range_preset'],
+    """, clone_name, clone_project, source['time_range_preset'],
         source['time_range_from'], source['time_range_to'], user_email)
 
     charts = await fetch(
         "SELECT * FROM control.dashboard_charts WHERE dashboard_id=$1 ORDER BY sort_order, id", id
     )
     for chart in charts:
+        src_filters = chart['filters'] if isinstance(chart['filters'], dict) else {}
         await execute("""
             INSERT INTO control.dashboard_charts (dashboard_id, name, sort_order, filters)
-            VALUES ($1, $2, $3, $4)
-        """, new_dash['id'], chart['name'], chart['sort_order'], json.dumps(dict(chart['filters']) if chart['filters'] else {}))
+            VALUES ($1, $2, $3, $4::jsonb)
+        """, new_dash['id'], chart['name'], chart['sort_order'], json.dumps(src_filters))
 
     d = serialize_row(new_dash)
     new_charts = await fetch(
@@ -3161,7 +3165,7 @@ async def add_chart(id: int, body: ChartIn):
 
     row = await fetchrow("""
         INSERT INTO control.dashboard_charts (dashboard_id, name, sort_order, filters)
-        VALUES ($1, $2, $3, $4)
+        VALUES ($1, $2, $3, $4::jsonb)
         RETURNING *
     """, id, body.name, body.sort_order, json.dumps(body.filters))
 

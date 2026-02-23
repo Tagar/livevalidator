@@ -4,8 +4,6 @@ import { dashboardService } from '../services/api';
 
 export function DashboardDirectoryView({ dashboards, loading, onSelect, onRefresh }) {
   const currentUser = useCurrentUser();
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
   const [createError, setCreateError] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState({});
 
@@ -34,12 +32,9 @@ export function DashboardDirectoryView({ dashboards, loading, onSelect, onRefres
   }, [dashboards, currentUser]);
 
   const handleCreate = async () => {
-    if (!newName.trim()) return;
     setCreateError(null);
     try {
-      const dash = await dashboardService.create({ name: newName.trim() });
-      setNewName('');
-      setCreating(false);
+      const dash = await dashboardService.create({ name: 'Untitled Dashboard' });
       onRefresh();
       onSelect(dash.id);
     } catch (err) {
@@ -114,46 +109,26 @@ export function DashboardDirectoryView({ dashboards, loading, onSelect, onRefres
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-rust-light to-orange-400 bg-clip-text text-transparent mb-1">
-            Dashboards
-          </h2>
-          <p className="text-gray-400 text-base">Create and manage validation dashboards</p>
-        </div>
-        {!creating ? (
-          <button
-            onClick={() => setCreating(true)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition-colors font-medium text-sm"
-          >
-            + New Dashboard
-          </button>
-        ) : (
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Dashboard name..."
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              className="px-3 py-2 bg-charcoal-700 border border-charcoal-300 rounded-lg text-gray-200 text-sm focus:outline-none focus:border-purple-500 w-64"
-              autoFocus
-            />
-            <button
-              onClick={handleCreate}
-              disabled={!newName.trim()}
-              className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
-            >
-              Create
-            </button>
-            <button
-              onClick={() => { setCreating(false); setNewName(''); setCreateError(null); }}
-              className="px-3 py-2 text-gray-400 hover:text-gray-200 text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
+      <div className="mb-4">
+        <h2 className="text-3xl font-bold text-rust-light mb-1">Dashboards</h2>
+        <p className="text-gray-400 text-base">
+          Create, organize, and share dashboards across projects
+        </p>
+      </div>
+
+      <div className="mb-3 flex gap-2">
+        <button
+          onClick={handleCreate}
+          className="px-3 py-2 text-base bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium"
+        >
+          + New Dashboard
+        </button>
+        <button
+          onClick={onRefresh}
+          className="px-3 py-2 text-base bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium ml-auto"
+        >
+          Refresh
+        </button>
       </div>
 
       {createError && (
@@ -191,7 +166,7 @@ export function DashboardDirectoryView({ dashboards, loading, onSelect, onRefres
       {grouped.myDashboards.length === 0 && grouped.projectSections.length === 0 && (
         <div className="text-center py-16 text-gray-500">
           <p className="text-lg mb-2">No dashboards yet</p>
-          <p className="text-sm">Click "New Dashboard" to create your first one.</p>
+          <p className="text-sm">Click "+ New Dashboard" to create your first one.</p>
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { PieChart, Pie, Cell, Tooltip, Label, ResponsiveContainer } from 'recharts';
 import { getTagColors } from './DashboardTagPane';
 
@@ -100,13 +100,37 @@ export function DashboardPieChart({
   onPieClick,
   onSelect,
   onRemove,
-  isOverall,
+  onRename,
   chartTags,
   chartFullTags,
   chartPartialTags,
+  chartName,
 }) {
   const isEmpty = data.length === 0;
   const entityCount = total ?? 0;
+  const [editingName, setEditingName] = useState(false);
+  const [nameVal, setNameVal] = useState('');
+  const nameRef = useRef(null);
+
+  useEffect(() => {
+    if (editingName && nameRef.current) {
+      nameRef.current.focus();
+      nameRef.current.select();
+    }
+  }, [editingName]);
+
+  const startRename = (e) => {
+    e.stopPropagation();
+    setNameVal(chartName || '');
+    setEditingName(true);
+  };
+
+  const commitRename = () => {
+    if (nameVal.trim() && onRename) {
+      onRename(chartId, nameVal.trim());
+    }
+    setEditingName(false);
+  };
 
   const CenterLabel = ({ viewBox }) => {
     const { cx, cy } = viewBox;
@@ -155,23 +179,43 @@ export function DashboardPieChart({
           : 'hover:ring-1 hover:ring-charcoal-300 rounded-xl'
       }`}
     >
-      {!isOverall && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemove(chartId); }}
-          className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-charcoal-700/80 text-gray-400 hover:bg-red-500/80 hover:text-white transition-all text-sm font-bold"
-          title="Remove chart"
-        >
-          x
-        </button>
-      )}
+      <button
+        onClick={(e) => { e.stopPropagation(); onRemove(chartId); }}
+        className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-charcoal-700/80 text-gray-400 hover:bg-red-500/80 hover:text-white transition-all text-sm font-bold"
+        title="Remove chart"
+      >
+        x
+      </button>
 
       {isSelected && (
-        <div className="absolute top-2 left-2 z-10 px-2 py-0.5 text-xs rounded bg-purple-500 text-white font-medium">
-          Selected
+        <div className="px-3 py-1.5 bg-charcoal-500/80 border-b border-charcoal-400/30 rounded-t-xl flex items-center gap-2">
+          {editingName ? (
+            <input
+              ref={nameRef}
+              type="text"
+              value={nameVal}
+              onChange={(e) => setNameVal(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setEditingName(false);
+              }}
+              className="flex-1 px-2 py-0.5 text-xs bg-charcoal-700 border border-purple-500 rounded text-gray-200 focus:outline-none"
+            />
+          ) : (
+            <button
+              onClick={startRename}
+              className="text-xs text-gray-400 hover:text-purple-300 transition-colors truncate"
+              title="Click to rename chart"
+            >
+              {chartName || 'Unnamed'} <span className="italic">(click to rename)</span>
+            </button>
+          )}
         </div>
       )}
 
-      <div className={`relative overflow-hidden bg-gradient-to-br from-charcoal-500 to-charcoal-600 border border-charcoal-200 rounded-xl p-5 flex flex-col shadow-lg transition-all duration-300 hover:shadow-xl hover:border-charcoal-100`}>
+      <div className={`relative overflow-hidden bg-gradient-to-br from-charcoal-500 to-charcoal-600 border border-charcoal-200 ${isSelected ? 'rounded-b-xl' : 'rounded-xl'} p-5 flex flex-col shadow-lg transition-all duration-300 hover:shadow-xl hover:border-charcoal-100`}>
         <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-rust-light/10 to-transparent rounded-bl-full" />
 
         {isEmpty ? (
@@ -229,7 +273,7 @@ export function DashboardPieChart({
         )}
       </div>
 
-      {!isOverall && chartTags && chartTags.length > 0 && (
+      {chartTags && chartTags.length > 0 && (
         <div className="px-3 pb-3 pt-1 bg-charcoal-600/50 rounded-b-xl border-t border-charcoal-400/30">
           <div className="flex flex-wrap gap-1 justify-center">
             {chartTags.map(tag => {

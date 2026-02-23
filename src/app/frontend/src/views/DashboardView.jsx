@@ -82,6 +82,7 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
   const [loadingSampleId, setLoadingSampleId] = useState(null);
 
   const [localChartFilters, setLocalChartFilters] = useState({});
+  const [localChartNames, setLocalChartNames] = useState({});
 
   const loadDashboard = useCallback(async () => {
     setDashLoading(true);
@@ -100,10 +101,17 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
       setProjects(projs);
 
       const filters = {};
+      const names = {};
       (dash.charts || []).forEach(c => {
-        filters[c.id] = c.filters || {};
+        let f = c.filters || {};
+        if (typeof f === 'string') {
+          try { f = JSON.parse(f); } catch { f = {}; }
+        }
+        filters[c.id] = f;
+        names[c.id] = c.name;
       });
       setLocalChartFilters(filters);
+      setLocalChartNames(names);
       setHasUnsavedChanges(false);
     } catch (err) {
       setDashError(err.message);
@@ -128,16 +136,25 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
 
   const handleSave = async () => {
     try {
-      await dashboardService.update(dashboardId, {
+      const updatedDash = await dashboardService.update(dashboardId, {
         time_range_preset: activePreset,
         time_range_from: activePreset === 'custom' ? customDateFrom || null : null,
         time_range_to: activePreset === 'custom' ? customDateTo || null : null,
         version: dashboard.version,
       });
+      setDashboard(prev => ({ ...prev, version: updatedDash.version }));
 
       for (const chart of charts) {
-        const filters = localChartFilters[chart.id] || {};
-        await dashboardService.updateChart(dashboardId, chart.id, { filters });
+        let filters = localChartFilters[chart.id] || {};
+        if (typeof filters === 'string') {
+          try { filters = JSON.parse(filters); } catch { filters = {}; }
+        }
+        const chartName = localChartNames[chart.id];
+        const payload = { filters };
+        if (chartName !== undefined && chartName !== chart.name) {
+          payload.name = chartName;
+        }
+        await dashboardService.updateChart(dashboardId, chart.id, payload);
       }
 
       await loadDashboard();
@@ -146,12 +163,24 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
     }
   };
 
-  const handleClone = async () => {
+  const handleClone = async (name, project) => {
     try {
-      const cloned = await dashboardService.clone(dashboardId);
+      await dashboardService.clone(dashboardId, { name, project });
       onBack();
     } catch (err) {
       alert(`Clone failed: ${err.message}`);
+    }
+  };
+
+  const handleRename = async (newName) => {
+    try {
+      const updated = await dashboardService.update(dashboardId, {
+        name: newName,
+        version: dashboard.version,
+      });
+      setDashboard(prev => ({ ...prev, name: newName, version: updated.version }));
+    } catch (err) {
+      alert(`Rename failed: ${err.message}`);
     }
   };
 
@@ -186,6 +215,7 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
       });
       setCharts(prev => [...prev, newChart]);
       setLocalChartFilters(prev => ({ ...prev, [newChart.id]: {} }));
+      setLocalChartNames(prev => ({ ...prev, [newChart.id]: newChart.name }));
       setSelectedChartId(newChart.id);
       setDrillDown(null);
     } catch (err) {
@@ -193,9 +223,14 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
     }
   };
 
+  const handleChartRename = (chartId, newName) => {
+    setLocalChartNames(prev => ({ ...prev, [chartId]: newName }));
+    setHasUnsavedChanges(true);
+  };
+
   const handleRemoveChart = async (chartId) => {
     const chart = charts.find(c => c.id === chartId);
-    if (!chart || chart.name === 'Overall') return;
+    if (!chart) return;
     try {
       await dashboardService.deleteChart(dashboardId, chartId);
       setCharts(prev => prev.filter(c => c.id !== chartId));
@@ -348,25 +383,21 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
     });
   }, [charts, getChartEntities, allEntityData]);
 
-  const { tagsInChart, fullTags, partialTags } = useMemo(() => {
-    const chartData = chartPieData.find(c => c.chartId === selectedChartId);
-    if (!chartData) return { tagsInChart: new Set(), fullTags: new Set(), partialTags: new Set() };
-    return {
-      tagsInChart: new Set(chartData.tagsInChart),
-      fullTags: new Set(chartData.fullTags),
-      partialTags: new Set(chartData.partialTags),
-    };
-  }, [chartPieData, selectedChartId]);
+  const selectedTagSet = useMemo(() => {
+    const filters = selectedChart ? getChartFilters(selectedChart.id) : {};
+    const tags = filters.tags || [];
+    if (tags.length === 0) return new Set(allTagsInData);
+    if (tags.length === 1 && tags[0] === '__none__') return new Set();
+    return new Set(tags);
+  }, [selectedChart, localChartFilters, allTagsInData]);
 
   const tagStates = useMemo(() => {
     const states = {};
     allTagsInData.forEach(tag => {
-      if (fullTags.has(tag)) states[tag] = 'full';
-      else if (partialTags.has(tag)) states[tag] = 'partial';
-      else states[tag] = 'none';
+      states[tag] = selectedTagSet.has(tag) ? 'full' : 'none';
     });
     return states;
-  }, [allTagsInData, fullTags, partialTags]);
+  }, [allTagsInData, selectedTagSet]);
 
   const trendData = useMemo(() => {
     const chartEntityKeys = new Set(latestPerEntity.map(getEntityKey));
@@ -405,12 +436,26 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
     if (!selectedChart) return;
     const filters = getChartFilters(selectedChart.id);
     const currentTags = filters.tags || [];
-    const isInChart = tagsInChart.has(tag);
+    const isSelected = selectedTagSet.has(tag);
 
-    if (isInChart) {
-      updateChartFilter(selectedChart.id, 'tags', currentTags.filter(t => t !== tag));
+    if (isSelected) {
+      if (currentTags.length === 0) {
+        updateChartFilter(selectedChart.id, 'tags', allTagsInData.filter(t => t !== tag));
+      } else {
+        const remaining = currentTags.filter(t => t !== tag);
+        updateChartFilter(selectedChart.id, 'tags', remaining.length === 0 ? ['__none__'] : remaining);
+      }
     } else {
-      updateChartFilter(selectedChart.id, 'tags', [...currentTags, tag]);
+      if (currentTags.length === 1 && currentTags[0] === '__none__') {
+        updateChartFilter(selectedChart.id, 'tags', [tag]);
+      } else {
+        const newTags = [...currentTags, tag];
+        if (newTags.length === allTagsInData.length) {
+          updateChartFilter(selectedChart.id, 'tags', []);
+        } else {
+          updateChartFilter(selectedChart.id, 'tags', newTags);
+        }
+      }
     }
     setDrillDown(null);
   };
@@ -478,10 +523,14 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
   if (!dashboard) return null;
 
   const selectedChartFilters = selectedChart ? getChartFilters(selectedChart.id) : {};
-  const isOverallChart = selectedChart?.name === 'Overall' && charts.indexOf(selectedChart) === 0;
 
   return (
     <div>
+      <div className="mb-4">
+        <h2 className="text-3xl font-bold text-rust-light mb-1">Dashboard</h2>
+        <p className="text-gray-400 text-base">Configure charts, apply filters, and analyze validation trends</p>
+      </div>
+
       <DashboardDirectoryPane
         dashboard={dashboard}
         projects={projects}
@@ -489,6 +538,7 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
         onClone={handleClone}
         onDelete={handleDelete}
         onPublish={handlePublish}
+        onRename={handleRename}
         onBack={onBack}
         hasUnsavedChanges={hasUnsavedChanges}
       />
@@ -497,12 +547,12 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
         {/* Tag Pane (left) */}
         <DashboardTagPane
           allTags={allTagsInData}
-          selectedTags={tagsInChart}
+          selectedTags={selectedTagSet}
           tagStates={tagStates}
           onTagClick={handleTagClick}
           onSelectAll={activateAllTags}
           onDeselectAll={deactivateAllTags}
-          selectedChartName={selectedChart?.name || 'Overall'}
+          selectedChartName={localChartNames[selectedChart?.id] || selectedChart?.name || 'Overall'}
         />
 
         {/* Main content */}
@@ -557,7 +607,7 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
           </div>
 
           {/* Per-chart filters (for selected chart) */}
-          {selectedChart && !isOverallChart && (
+          {selectedChart && (
             <div className="bg-gradient-to-br from-charcoal-500 to-charcoal-600 border border-charcoal-200 rounded-xl mb-4 shadow-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-gray-300 text-sm font-semibold">
@@ -639,22 +689,24 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
             </div>
 
             <div className="flex flex-wrap gap-4 justify-center">
-              {chartPieData.map(({ chartId, tagsInChart: chartTags, fullTags: chartFullTags, partialTags: chartPartialTags, entities, pieData }) => {
+              {chartPieData.map(({ chartId, entities, pieData }) => {
                 const chart = charts.find(c => c.id === chartId);
                 const isSelected = chartId === selectedChartId;
-                const isOverall = chart?.name === 'Overall' && charts.indexOf(chart) === 0;
+                const customName = localChartNames[chartId];
+                const isDefaultName = /^Chart \d+$/.test(customName || '');
+
+                const chartFilters = localChartFilters[chartId] || {};
+                const filterTags = (chartFilters.tags || []).filter(t => t !== '__none__');
 
                 let chartTitle;
-                if (isOverall) {
-                  chartTitle = 'Overall';
-                } else if (chartFullTags.length === 0 && chartPartialTags.length === 0) {
-                  chartTitle = chart?.name || 'Empty';
-                } else if (chartFullTags.length === 0) {
-                  chartTitle = chart?.name || '(partial only)';
-                } else if (chartFullTags.length <= 4) {
-                  chartTitle = chartFullTags.join(', ');
+                if (!isDefaultName && customName) {
+                  chartTitle = customName;
+                } else if (filterTags.length === 0) {
+                  chartTitle = customName || chart?.name || 'All';
+                } else if (filterTags.length <= 4) {
+                  chartTitle = filterTags.join(', ');
                 } else {
-                  chartTitle = `${chartFullTags.slice(0, 4).join(', ')} +${chartFullTags.length - 4}`;
+                  chartTitle = `${filterTags.slice(0, 4).join(', ')} +${filterTags.length - 4}`;
                 }
 
                 return (
@@ -669,10 +721,11 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
                     onPieClick={handlePieClick}
                     onSelect={selectChart}
                     onRemove={handleRemoveChart}
-                    isOverall={isOverall}
-                    chartTags={chartTags}
-                    chartFullTags={chartFullTags}
-                    chartPartialTags={chartPartialTags}
+                    onRename={handleChartRename}
+                    chartTags={filterTags}
+                    chartFullTags={filterTags}
+                    chartPartialTags={[]}
+                    chartName={customName || chart?.name}
                   />
                 );
               })}
@@ -684,7 +737,7 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
             <div className="p-3 bg-charcoal-400 border-b border-charcoal-200 rounded-t-lg flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2 flex-wrap">
-                  {selectedChart?.name || 'Overall'}
+                  {localChartNames[selectedChart?.id] || selectedChart?.name || 'Overall'}
                   {drillDown && (
                     <span
                       className="px-2 py-0.5 text-sm rounded flex items-center gap-1"

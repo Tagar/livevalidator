@@ -213,7 +213,7 @@ export const dashboardService = {
   create: (data) => apiCall("POST", "/api/dashboards", data),
   update: (id, data) => apiCall("PUT", `/api/dashboards/${id}`, data),
   delete: (id) => apiCall("DELETE", `/api/dashboards/${id}`),
-  clone: (id) => apiCall("POST", `/api/dashboards/${id}/clone`),
+  clone: (id, data) => apiCall("POST", `/api/dashboards/${id}/clone`, data),
   listProjects: () => fetch("/api/dashboards/projects").then(r => r.json()),
   addChart: (id, data) => apiCall("POST", `/api/dashboards/${id}/charts`, data),
   updateChart: (id, chartId, data) => apiCall("PUT", `/api/dashboards/${id}/charts/${chartId}`, data),
