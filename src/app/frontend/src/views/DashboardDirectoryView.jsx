@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useCurrentUser } from '../App';
+import { Checkbox } from '../components/Checkbox';
 import { dashboardService, apiCall } from '../services/api';
 
 export function DashboardDirectoryView({ dashboards, loading, error, onSelect, onRefresh }) {
@@ -7,16 +8,42 @@ export function DashboardDirectoryView({ dashboards, loading, error, onSelect, o
   const [createError, setCreateError] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState({});
   const [initLoading, setInitLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [filterText, setFilterText] = useState('');
+  const [filterProject, setFilterProject] = useState('');
 
   const toggleSection = (key) => {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const allDashboardItems = useMemo(() => dashboards || [], [dashboards]);
+
+  const allProjects = useMemo(() => {
+    const projects = new Set();
+    allDashboardItems.forEach(d => {
+      if (d.project && d.project !== 'General') projects.add(d.project);
+    });
+    return ['General', ...Array.from(projects).sort()];
+  }, [allDashboardItems]);
+
+  const filteredItems = useMemo(() => {
+    let items = allDashboardItems;
+    if (filterText) {
+      const lower = filterText.toLowerCase();
+      items = items.filter(d => d.name.toLowerCase().includes(lower));
+    }
+    if (filterProject) {
+      items = items.filter(d => d.project === filterProject);
+    }
+    return items;
+  }, [allDashboardItems, filterText, filterProject]);
+
   const grouped = useMemo(() => {
     const myDashboards = [];
     const projectMap = {};
 
-    (dashboards || []).forEach(d => {
+    filteredItems.forEach(d => {
       if (d.project === 'General' && d.created_by === currentUser?.email) {
         myDashboards.push(d);
       } else if (d.project !== 'General') {
@@ -30,12 +57,19 @@ export function DashboardDirectoryView({ dashboards, loading, error, onSelect, o
       .map(([name, items]) => ({ name, items }));
 
     return { myDashboards, projectSections };
-  }, [dashboards, currentUser]);
+  }, [filteredItems, currentUser]);
 
   const handleCreate = async () => {
     setCreateError(null);
     try {
-      const dash = await dashboardService.create({ name: 'Untitled Dashboard' });
+      let name = 'Untitled Dashboard';
+      const existing = new Set(allDashboardItems.map(d => d.name));
+      if (existing.has(name)) {
+        let i = 2;
+        while (existing.has(`Untitled Dashboard ${i}`)) i++;
+        name = `Untitled Dashboard ${i}`;
+      }
+      const dash = await dashboardService.create({ name });
       onRefresh();
       onSelect(dash.id);
     } catch (err) {
@@ -48,40 +82,89 @@ export function DashboardDirectoryView({ dashboards, loading, error, onSelect, o
     return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const DashboardTable = ({ items }) => (
-    <table className="w-full">
-      <thead>
-        <tr className="border-b border-charcoal-300/50">
-          <th className="text-left px-3 py-2 text-sm text-gray-400 font-semibold">Name</th>
-          <th className="text-left px-3 py-2 text-sm text-gray-400 font-semibold">Charts</th>
-          <th className="text-left px-3 py-2 text-sm text-gray-400 font-semibold">Created By</th>
-          <th className="text-left px-3 py-2 text-sm text-gray-400 font-semibold">Last Updated</th>
-        </tr>
-      </thead>
-      <tbody>
-        {items.length === 0 ? (
+  const handleSelectAllInSection = (items, checked) => {
+    const next = new Set(selectedIds);
+    items.forEach(d => {
+      if (checked) next.add(d.id);
+      else next.delete(d.id);
+    });
+    setSelectedIds(next);
+  };
+
+  const handleSelectRow = (id, checked) => {
+    const next = new Set(selectedIds);
+    if (checked) next.add(id);
+    else next.delete(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    try {
+      await Promise.all(Array.from(selectedIds).map(id => dashboardService.delete(id)));
+      setSelectedIds(new Set());
+      setShowDeleteConfirm(false);
+      onRefresh();
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`);
+    }
+  };
+
+  const someSelected = selectedIds.size > 0;
+
+  const DashboardTable = ({ items }) => {
+    const allInSectionSelected = items.length > 0 && items.every(d => selectedIds.has(d.id));
+    return (
+      <table className="w-full table-fixed">
+        <thead className="bg-charcoal-400 border-b border-charcoal-200">
           <tr>
-            <td colSpan={4} className="text-center py-6 text-gray-500 text-sm italic">
-              No dashboards
-            </td>
+            <th className="text-left px-2 py-1.5 text-sm text-gray-300 font-semibold w-10">
+              <Checkbox
+                checked={allInSectionSelected}
+                onChange={(e) => handleSelectAllInSection(items, e.target.checked)}
+              />
+            </th>
+            <th className="text-left px-3 py-1.5 text-sm text-gray-300 font-semibold w-[40%]">Name</th>
+            <th className="text-left px-3 py-1.5 text-sm text-gray-300 font-semibold w-[10%]">Charts</th>
+            <th className="text-left px-3 py-1.5 text-sm text-gray-300 font-semibold w-[28%]">Created By</th>
+            <th className="text-left px-3 py-1.5 text-sm text-gray-300 font-semibold w-[17%]">Last Updated</th>
           </tr>
-        ) : (
-          items.map(d => (
-            <tr
-              key={d.id}
-              onClick={() => onSelect(d.id)}
-              className="border-b border-charcoal-300/20 hover:bg-charcoal-400/50 transition-colors cursor-pointer"
-            >
-              <td className="px-3 py-2.5 text-gray-200 font-medium text-sm">{d.name}</td>
-              <td className="px-3 py-2.5 text-gray-400 text-sm">{d.chart_count ?? 0}</td>
-              <td className="px-3 py-2.5 text-gray-400 text-sm">{d.created_by}</td>
-              <td className="px-3 py-2.5 text-gray-400 text-sm">{formatDate(d.updated_at)}</td>
+        </thead>
+        <tbody>
+          {items.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="text-center py-6 text-gray-500 text-sm italic">
+                No dashboards
+              </td>
             </tr>
-          ))
-        )}
-      </tbody>
-    </table>
-  );
+          ) : (
+            items.map(d => {
+              const isSelected = selectedIds.has(d.id);
+              return (
+                <tr
+                  key={d.id}
+                  onClick={() => onSelect(d.id)}
+                  className={`border-b border-charcoal-300/20 hover:bg-charcoal-400/50 transition-colors cursor-pointer ${
+                    isSelected ? 'bg-purple-900/20' : ''
+                  }`}
+                >
+                  <td className="px-2 py-1.5 text-sm" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={isSelected}
+                      onChange={(e) => handleSelectRow(d.id, e.target.checked)}
+                    />
+                  </td>
+                  <td className="px-3 py-1.5 text-gray-200 font-medium text-sm truncate">{d.name}</td>
+                  <td className="px-3 py-1.5 text-gray-400 text-sm">{d.chart_count ?? 0}</td>
+                  <td className="px-3 py-1.5 text-gray-400 text-sm truncate">{d.created_by}</td>
+                  <td className="px-3 py-1.5 text-gray-400 text-sm">{formatDate(d.updated_at)}</td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    );
+  };
 
   const SectionHeader = ({ title, count, sectionKey }) => {
     const isCollapsed = collapsedSections[sectionKey];
@@ -156,7 +239,7 @@ export function DashboardDirectoryView({ dashboards, loading, error, onSelect, o
         </p>
       </div>
 
-      <div className="mb-3 flex gap-2">
+      <div className="mb-3 flex gap-2 items-center">
         <button
           onClick={handleCreate}
           className="px-3 py-2 text-base bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium"
@@ -177,8 +260,79 @@ export function DashboardDirectoryView({ dashboards, loading, error, onSelect, o
         </div>
       )}
 
-      {/* My Dashboards */}
-      <div className="mb-4 bg-charcoal-500 border border-charcoal-200 rounded-lg overflow-hidden">
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="bg-charcoal-500 border border-red-700 rounded-lg p-4 max-w-md" onClick={e => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-red-400 mb-2">Confirm Delete</h3>
+            <p className="text-gray-300 mb-4">
+              Are you sure you want to delete <strong>{selectedIds.size}</strong> dashboard{selectedIds.size !== 1 ? 's' : ''}? This action cannot be undone.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-3 py-1.5 bg-charcoal-600 text-gray-200 rounded hover:bg-charcoal-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-500"
+              >
+                Delete {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-charcoal-500 border border-charcoal-200 rounded-lg overflow-hidden">
+        {/* Filter bar */}
+        <div className="p-2 bg-charcoal-400 border-b border-charcoal-200">
+          <div className="flex gap-2 items-center">
+            <input
+              type="text"
+              placeholder="Filter by name..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="w-[24rem] px-3 py-1.5 bg-charcoal-600 border border-charcoal-300 rounded text-gray-200 text-sm focus:outline-none focus:border-rust-light"
+            />
+            <select
+              value={filterProject}
+              onChange={(e) => setFilterProject(e.target.value)}
+              className="w-40 px-2 py-1.5 bg-charcoal-600 border border-charcoal-300 rounded text-gray-200 text-sm focus:outline-none focus:border-rust-light cursor-pointer"
+            >
+              <option value="">All Projects</option>
+              {allProjects.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+
+            <div className="ml-auto flex items-center gap-1.5">
+              {someSelected ? (
+                <>
+                  <span className="text-purple-300 font-medium text-sm whitespace-nowrap mr-1">{selectedIds.size} selected</span>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-2 py-1 text-sm bg-red-600 text-gray-100 rounded hover:bg-red-500 transition-colors"
+                    title="Delete selected"
+                  >
+                    Del
+                  </button>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="px-2 py-1 text-sm bg-charcoal-600 text-gray-300 rounded hover:bg-charcoal-500 transition-colors whitespace-nowrap"
+                  >
+                    Clear
+                  </button>
+                </>
+              ) : (
+                <span className="text-gray-500 text-sm">Select items for bulk actions</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* My Dashboards */}
         <SectionHeader
           title="My Dashboards"
           count={grouped.myDashboards.length}
@@ -187,28 +341,32 @@ export function DashboardDirectoryView({ dashboards, loading, error, onSelect, o
         {!collapsedSections['my'] && (
           <DashboardTable items={grouped.myDashboards} />
         )}
+
+        {/* Project Sections */}
+        {grouped.projectSections.map(section => (
+          <React.Fragment key={section.name}>
+            <SectionHeader
+              title={section.name}
+              count={section.items.length}
+              sectionKey={`project-${section.name}`}
+            />
+            {!collapsedSections[`project-${section.name}`] && (
+              <DashboardTable items={section.items} />
+            )}
+          </React.Fragment>
+        ))}
+
+        {grouped.myDashboards.length === 0 && grouped.projectSections.length === 0 && (
+          <div className="text-center py-12 text-gray-500">
+            <p className="text-base mb-1">No dashboards found</p>
+            <p className="text-sm">
+              {filterText || filterProject
+                ? 'Try adjusting your filters.'
+                : 'Click "+ New Dashboard" to create your first one.'}
+            </p>
+          </div>
+        )}
       </div>
-
-      {/* Project Sections */}
-      {grouped.projectSections.map(section => (
-        <div key={section.name} className="mb-4 bg-charcoal-500 border border-charcoal-200 rounded-lg overflow-hidden">
-          <SectionHeader
-            title={section.name}
-            count={section.items.length}
-            sectionKey={`project-${section.name}`}
-          />
-          {!collapsedSections[`project-${section.name}`] && (
-            <DashboardTable items={section.items} />
-          )}
-        </div>
-      ))}
-
-      {grouped.myDashboards.length === 0 && grouped.projectSections.length === 0 && (
-        <div className="text-center py-16 text-gray-500">
-          <p className="text-lg mb-2">No dashboards yet</p>
-          <p className="text-sm">Click "+ New Dashboard" to create your first one.</p>
-        </div>
-      )}
     </div>
   );
 }

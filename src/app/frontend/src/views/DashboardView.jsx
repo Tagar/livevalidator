@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { SampleDifferencesModal } from '../components/modals/SampleDifferencesModal';
 import { ValidationResultsTable } from '../components/ValidationResultsTable';
 import { DashboardDirectoryPane } from '../components/DashboardDirectoryPane';
-import { DashboardTagPane } from '../components/DashboardTagPane';
+import { DashboardTagPane, getTagColors } from '../components/DashboardTagPane';
 import { DashboardPieChart, CATEGORIES, categorizeResult, computePieData } from '../components/DashboardPieChart';
 import { dashboardService } from '../services/api';
 
@@ -210,11 +210,11 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
     try {
       const newChart = await dashboardService.addChart(dashboardId, {
         name: `Chart ${charts.length}`,
-        filters: {},
+        filters: { tags: ['__none__'] },
         sort_order: charts.length,
       });
       setCharts(prev => [...prev, newChart]);
-      setLocalChartFilters(prev => ({ ...prev, [newChart.id]: {} }));
+      setLocalChartFilters(prev => ({ ...prev, [newChart.id]: { tags: ['__none__'] } }));
       setLocalChartNames(prev => ({ ...prev, [newChart.id]: newChart.name }));
       setSelectedChartId(newChart.id);
       setDrillDown(null);
@@ -353,7 +353,10 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
 
   const latestPerEntity = useMemo(() => {
     if (!selectedChart) return [];
-    return getChartEntities(selectedChart.id);
+    return getChartEntities(selectedChart.id).map(v => ({
+      ...v,
+      _parsedTags: parseTags(v.tags),
+    }));
   }, [selectedChart, getChartEntities]);
 
   const chartPieData = useMemo(() => {
@@ -393,11 +396,16 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
 
   const tagStates = useMemo(() => {
     const states = {};
+    const chartData = chartPieData.find(c => c.chartId === selectedChartId);
+    const fullSet = new Set(chartData?.fullTags || []);
+    const inChartSet = new Set(chartData?.tagsInChart || []);
     allTagsInData.forEach(tag => {
-      states[tag] = selectedTagSet.has(tag) ? 'full' : 'none';
+      if (fullSet.has(tag)) states[tag] = 'full';
+      else if (inChartSet.has(tag)) states[tag] = 'partial';
+      else states[tag] = 'none';
     });
     return states;
-  }, [allTagsInData, selectedTagSet]);
+  }, [allTagsInData, chartPieData, selectedChartId]);
 
   const trendData = useMemo(() => {
     const chartEntityKeys = new Set(latestPerEntity.map(getEntityKey));
@@ -689,7 +697,7 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
             </div>
 
             <div className="flex flex-wrap gap-4 justify-center">
-              {chartPieData.map(({ chartId, entities, pieData }) => {
+              {chartPieData.map(({ chartId, tagsInChart, fullTags, partialTags, entities, pieData }) => {
                 const chart = charts.find(c => c.id === chartId);
                 const isSelected = chartId === selectedChartId;
                 const customName = localChartNames[chartId];
@@ -697,16 +705,17 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
 
                 const chartFilters = localChartFilters[chartId] || {};
                 const filterTags = (chartFilters.tags || []).filter(t => t !== '__none__');
+                const displayTags = filterTags.length > 0 ? filterTags : tagsInChart;
 
                 let chartTitle;
                 if (!isDefaultName && customName) {
                   chartTitle = customName;
-                } else if (filterTags.length === 0) {
+                } else if (displayTags.length === 0) {
                   chartTitle = customName || chart?.name || 'All';
-                } else if (filterTags.length <= 4) {
-                  chartTitle = filterTags.join(', ');
+                } else if (displayTags.length <= 4) {
+                  chartTitle = displayTags.join(', ');
                 } else {
-                  chartTitle = `${filterTags.slice(0, 4).join(', ')} +${filterTags.length - 4}`;
+                  chartTitle = `${displayTags.slice(0, 4).join(', ')} +${displayTags.length - 4}`;
                 }
 
                 return (
@@ -722,9 +731,9 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
                     onSelect={selectChart}
                     onRemove={handleRemoveChart}
                     onRename={handleChartRename}
-                    chartTags={filterTags}
-                    chartFullTags={filterTags}
-                    chartPartialTags={[]}
+                    chartTags={tagsInChart}
+                    chartFullTags={fullTags}
+                    chartPartialTags={partialTags}
                     chartName={customName || chart?.name}
                   />
                 );
@@ -738,6 +747,22 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
               <div>
                 <h3 className="text-lg font-semibold text-gray-100 flex items-center gap-2 flex-wrap">
                   {localChartNames[selectedChart?.id] || selectedChart?.name || 'Overall'}
+                  {(() => {
+                    const cd = chartPieData.find(c => c.chartId === selectedChartId);
+                    const tags = cd?.tagsInChart || [];
+                    const fullSet = new Set(cd?.fullTags || []);
+                    return tags.map(tag => {
+                      const colors = getTagColors(tag);
+                      const isFull = fullSet.has(tag);
+                      return (
+                        <span key={tag} className={`px-2 py-0.5 text-sm rounded ${
+                          isFull
+                            ? `${colors.bg} ${colors.text} border ${colors.border}`
+                            : `${colors.text} ${colors.border} border-2 border-dashed`
+                        }`}>{tag}</span>
+                      );
+                    });
+                  })()}
                   {drillDown && (
                     <span
                       className="px-2 py-0.5 text-sm rounded flex items-center gap-1"
