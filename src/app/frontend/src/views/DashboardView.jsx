@@ -400,12 +400,13 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
     const fullSet = new Set(chartData?.fullTags || []);
     const inChartSet = new Set(chartData?.tagsInChart || []);
     allTagsInData.forEach(tag => {
-      if (fullSet.has(tag)) states[tag] = 'full';
+      if (!selectedTagSet.has(tag)) states[tag] = 'none';
+      else if (fullSet.has(tag)) states[tag] = 'full';
       else if (inChartSet.has(tag)) states[tag] = 'partial';
       else states[tag] = 'none';
     });
     return states;
-  }, [allTagsInData, chartPieData, selectedChartId]);
+  }, [allTagsInData, chartPieData, selectedChartId, selectedTagSet]);
 
   const trendData = useMemo(() => {
     const chartEntityKeys = new Set(latestPerEntity.map(getEntityKey));
@@ -705,7 +706,13 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
 
                 const chartFilters = localChartFilters[chartId] || {};
                 const filterTags = (chartFilters.tags || []).filter(t => t !== '__none__');
-                const displayTags = filterTags.length > 0 ? filterTags : tagsInChart;
+                const isAllMode = filterTags.length === 0;
+                const filterSet = new Set(filterTags);
+
+                const visibleTags = isAllMode ? tagsInChart : tagsInChart.filter(t => filterSet.has(t));
+                const visibleFullTags = isAllMode ? fullTags : fullTags.filter(t => filterSet.has(t));
+                const visiblePartialTags = isAllMode ? partialTags : partialTags.filter(t => filterSet.has(t));
+                const displayTags = isAllMode ? tagsInChart : filterTags;
 
                 let chartTitle;
                 if (!isDefaultName && customName) {
@@ -731,9 +738,9 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
                     onSelect={selectChart}
                     onRemove={handleRemoveChart}
                     onRename={handleChartRename}
-                    chartTags={tagsInChart}
-                    chartFullTags={fullTags}
-                    chartPartialTags={partialTags}
+                    chartTags={visibleTags}
+                    chartFullTags={visibleFullTags}
+                    chartPartialTags={visiblePartialTags}
                     chartName={customName || chart?.name}
                   />
                 );
@@ -749,7 +756,7 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
                   {localChartNames[selectedChart?.id] || selectedChart?.name || 'Overall'}
                   {(() => {
                     const cd = chartPieData.find(c => c.chartId === selectedChartId);
-                    const tags = cd?.tagsInChart || [];
+                    const tags = (cd?.tagsInChart || []).filter(t => selectedTagSet.has(t));
                     const fullSet = new Set(cd?.fullTags || []);
                     return tags.map(tag => {
                       const colors = getTagColors(tag);
