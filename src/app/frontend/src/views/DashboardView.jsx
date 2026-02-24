@@ -400,10 +400,13 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
     const fullSet = new Set(chartData?.fullTags || []);
     const inChartSet = new Set(chartData?.tagsInChart || []);
     allTagsInData.forEach(tag => {
-      if (!selectedTagSet.has(tag)) states[tag] = 'none';
-      else if (fullSet.has(tag)) states[tag] = 'full';
-      else if (inChartSet.has(tag)) states[tag] = 'partial';
-      else states[tag] = 'none';
+      if (selectedTagSet.has(tag)) {
+        if (fullSet.has(tag)) states[tag] = 'full';
+        else if (inChartSet.has(tag)) states[tag] = 'partial';
+        else states[tag] = 'none';
+      } else {
+        states[tag] = inChartSet.has(tag) ? 'partial' : 'none';
+      }
     });
     return states;
   }, [allTagsInData, chartPieData, selectedChartId, selectedTagSet]);
@@ -709,9 +712,11 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
                 const isAllMode = filterTags.length === 0;
                 const filterSet = new Set(filterTags);
 
-                const visibleTags = isAllMode ? tagsInChart : tagsInChart.filter(t => filterSet.has(t));
+                const visibleTags = tagsInChart;
                 const visibleFullTags = isAllMode ? fullTags : fullTags.filter(t => filterSet.has(t));
-                const visiblePartialTags = isAllMode ? partialTags : partialTags.filter(t => filterSet.has(t));
+                const visiblePartialTags = isAllMode
+                  ? partialTags
+                  : tagsInChart.filter(t => !visibleFullTags.includes(t));
                 const displayTags = isAllMode ? tagsInChart : filterTags;
 
                 let chartTitle;
@@ -756,11 +761,11 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
                   {localChartNames[selectedChart?.id] || selectedChart?.name || 'Overall'}
                   {(() => {
                     const cd = chartPieData.find(c => c.chartId === selectedChartId);
-                    const tags = (cd?.tagsInChart || []).filter(t => selectedTagSet.has(t));
+                    const tags = cd?.tagsInChart || [];
                     const fullSet = new Set(cd?.fullTags || []);
                     return tags.map(tag => {
                       const colors = getTagColors(tag);
-                      const isFull = fullSet.has(tag);
+                      const isFull = fullSet.has(tag) && selectedTagSet.has(tag);
                       return (
                         <span key={tag} className={`px-2 py-0.5 text-sm rounded ${
                           isFull
