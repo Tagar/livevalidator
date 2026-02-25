@@ -353,12 +353,7 @@ export function ValidationResultsView({ highlightId, onClearHighlight, onNavigat
     <>
       {error && <ErrorBox message={error.message} onClose={() => setError(null)} />}
       <div className="mb-4 flex items-start justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-rust-light mb-1">Validation Results</h2>
-          <p className="text-gray-400 text-base">
-            {loading ? 'Loading...' : `${totalCount.toLocaleString()} results for ${getDateRangeLabel()}`}
-          </p>
-        </div>
+        <h2 className="text-3xl font-bold text-rust-light">Validation Results</h2>
         {selectedIds.length > 0 && (
           <button
             onClick={() => setShowDeleteConfirm(true)}
@@ -372,7 +367,10 @@ export function ValidationResultsView({ highlightId, onClearHighlight, onNavigat
       {/* Summary Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
         <div className="bg-charcoal-500 border border-charcoal-200 rounded-lg p-2.5">
-          <div className="text-gray-400 text-sm mb-0.5">Total</div>
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400 text-sm">Total</span>
+            <span className="text-xs px-1.5 py-0.5 bg-charcoal-400 text-gray-300 rounded">{getDateRangeLabel()}</span>
+          </div>
           <div className="text-3xl font-bold text-gray-100">{summaryStats.total.toLocaleString()}</div>
         </div>
         <div className="bg-green-900/20 border border-green-700 rounded-lg p-2.5">
