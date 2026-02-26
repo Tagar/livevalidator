@@ -27,7 +27,7 @@ const hashTagName = (name) => {
 
 export const getTagColors = (tag) => TAG_COLORS[hashTagName(tag)];
 
-const MAX_VISIBLE_TAGS = 30;
+const MAX_VISIBLE_TAGS = 60;
 
 export function DashboardTagPane({
   allTags,
@@ -43,7 +43,7 @@ export function DashboardTagPane({
   const hasOverflow = allTags.length > MAX_VISIBLE_TAGS;
 
   return (
-    <div className="w-52 shrink-0 sticky top-0 self-start max-h-[calc(100vh-8rem)] overflow-hidden flex flex-col bg-charcoal-600 border border-charcoal-200 rounded-lg">
+    <div className="w-[260px] shrink-0 sticky top-0 self-start max-h-[calc(100vh-4rem)] overflow-hidden flex flex-col bg-charcoal-600 border border-charcoal-200 rounded-lg">
       <div className="p-3 border-b border-charcoal-200/50">
         <h3 className="text-sm font-semibold text-gray-300 mb-1">Tags</h3>
         {selectedChartName && (

@@ -3173,6 +3173,26 @@ async def add_chart(id: int, body: ChartIn):
     return serialize_row(row)
 
 
+@api.put("/dashboards/{id}/charts/reorder")
+async def reorder_charts(id: int, body: ChartReorder):
+    """Bulk update chart sort_order based on provided order."""
+    user_email = get_user_email()
+    dashboard = await fetchrow("SELECT created_by FROM control.dashboards WHERE id=$1", id)
+    if not dashboard:
+        raise HTTPException(404, "Dashboard not found")
+    if dashboard['created_by'] != user_email:
+        await require_role('CAN_MANAGE')
+
+    for idx, chart_id in enumerate(body.chart_ids):
+        await execute("""
+            UPDATE control.dashboard_charts SET sort_order=$2, updated_at=now()
+            WHERE id=$1 AND dashboard_id=$3
+        """, chart_id, idx, id)
+
+    await execute("UPDATE control.dashboards SET updated_at=now(), updated_by=$2 WHERE id=$1", id, user_email)
+    return {"ok": True}
+
+
 @api.put("/dashboards/{id}/charts/{chart_id}")
 async def update_chart(id: int, chart_id: int, body: ChartUpdate):
     """Update a chart's name, filters, or sort_order."""
@@ -3213,26 +3233,6 @@ async def delete_chart(id: int, chart_id: int):
         await require_role('CAN_MANAGE')
 
     result = await execute("DELETE FROM control.dashboard_charts WHERE id=$1 AND dashboard_id=$2", chart_id, id)
-    await execute("UPDATE control.dashboards SET updated_at=now(), updated_by=$2 WHERE id=$1", id, user_email)
-    return {"ok": True}
-
-
-@api.put("/dashboards/{id}/charts/reorder")
-async def reorder_charts(id: int, body: ChartReorder):
-    """Bulk update chart sort_order based on provided order."""
-    user_email = get_user_email()
-    dashboard = await fetchrow("SELECT created_by FROM control.dashboards WHERE id=$1", id)
-    if not dashboard:
-        raise HTTPException(404, "Dashboard not found")
-    if dashboard['created_by'] != user_email:
-        await require_role('CAN_MANAGE')
-
-    for idx, chart_id in enumerate(body.chart_ids):
-        await execute("""
-            UPDATE control.dashboard_charts SET sort_order=$2, updated_at=now()
-            WHERE id=$1 AND dashboard_id=$3
-        """, chart_id, idx, id)
-
     await execute("UPDATE control.dashboards SET updated_at=now(), updated_by=$2 WHERE id=$1", id, user_email)
     return {"ok": True}
 

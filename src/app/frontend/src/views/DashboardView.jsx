@@ -173,17 +173,30 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
     try {
       await dashboardService.deleteChart(dashboardId, chartId);
       setCharts(prev => prev.filter(c => c.id !== chartId));
-      setLocalChartFilters(prev => {
-        const next = { ...prev };
-        delete next[chartId];
-        return next;
-      });
       if (selectedChartId === chartId) {
         setSelectedChartId(charts[0]?.id ?? null);
       }
       setDrillDown(null);
     } catch (err) {
       alert(`Remove chart failed: ${err.message}`);
+    }
+  };
+
+  const handleMoveChart = async (chartId, direction) => {
+    const idx = charts.findIndex(c => c.id === chartId);
+    if (idx === -1) return;
+    const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= charts.length) return;
+
+    const reordered = [...charts];
+    [reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]];
+    setCharts(reordered);
+
+    try {
+      await dashboardService.reorderCharts(dashboardId, reordered.map(c => c.id));
+    } catch (err) {
+      setCharts(charts); // revert on error
+      alert(`Reorder failed: ${err.message}`);
     }
   };
 
@@ -528,14 +541,13 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
             </div>
 
             <div className="flex flex-wrap gap-4 justify-center">
-              {chartPieData.map(({ chartId, tagsInChart, fullTags, partialTags, entities, pieData }) => {
+              {chartPieData.map(({ chartId, tagsInChart, fullTags, partialTags, entities, pieData }, idx) => {
                 const chart = charts.find(c => c.id === chartId);
                 const isSelected = chartId === selectedChartId;
                 const customName = localChartNames[chartId];
                 const isDefaultName = /^Chart \d+$/.test(customName || '');
                 const isAllEntities = getChartEntityKeys(chartId) === null;
 
-                // Entity-centric: title based on tags in chart
                 let chartTitle;
                 if (!isDefaultName && customName) {
                   chartTitle = customName;
@@ -560,6 +572,10 @@ export function DashboardView({ dashboardId, onNavigateToEntity, onBack }) {
                     onSelect={selectChart}
                     onRemove={handleRemoveChart}
                     onRename={handleChartRename}
+                    onMoveUp={(id) => handleMoveChart(id, 'up')}
+                    onMoveDown={(id) => handleMoveChart(id, 'down')}
+                    isFirst={idx === 0}
+                    isLast={idx === chartPieData.length - 1}
                     chartTags={tagsInChart}
                     chartFullTags={fullTags}
                     chartPartialTags={partialTags}

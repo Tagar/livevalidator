@@ -101,6 +101,10 @@ export function DashboardPieChart({
   onSelect,
   onRemove,
   onRename,
+  onMoveUp,
+  onMoveDown,
+  isFirst,
+  isLast,
   chartTags,
   chartFullTags,
   chartPartialTags,
@@ -179,13 +183,33 @@ export function DashboardPieChart({
           : 'hover:ring-1 hover:ring-charcoal-300 rounded-xl'
       }`}
     >
-      <button
-        onClick={(e) => { e.stopPropagation(); onRemove(chartId); }}
-        className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-charcoal-700/80 text-gray-400 hover:bg-red-500/80 hover:text-white transition-all text-sm font-bold"
-        title="Remove chart"
-      >
-        x
-      </button>
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+        {!isFirst && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onMoveUp?.(chartId); }}
+            className="w-6 h-6 flex items-center justify-center rounded-full bg-charcoal-700/80 text-gray-400 hover:bg-purple-500/80 hover:text-white transition-all text-xs"
+            title="Move left"
+          >
+            ◀
+          </button>
+        )}
+        {!isLast && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onMoveDown?.(chartId); }}
+            className="w-6 h-6 flex items-center justify-center rounded-full bg-charcoal-700/80 text-gray-400 hover:bg-purple-500/80 hover:text-white transition-all text-xs"
+            title="Move right"
+          >
+            ▶
+          </button>
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(chartId); }}
+          className="w-6 h-6 flex items-center justify-center rounded-full bg-charcoal-700/80 text-gray-400 hover:bg-red-500/80 hover:text-white transition-all text-sm font-bold"
+          title="Remove chart"
+        >
+          ×
+        </button>
+      </div>
 
       {isSelected && (
         <div className="px-3 py-1.5 bg-charcoal-500/80 border-b border-charcoal-400/30 rounded-t-xl flex items-center gap-2">

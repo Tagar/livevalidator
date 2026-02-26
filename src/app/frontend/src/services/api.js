@@ -218,7 +218,7 @@ export const dashboardService = {
   addChart: (id, data) => apiCall("POST", `/api/dashboards/${id}/charts`, data),
   updateChart: (id, chartId, data) => apiCall("PUT", `/api/dashboards/${id}/charts/${chartId}`, data),
   deleteChart: (id, chartId) => apiCall("DELETE", `/api/dashboards/${id}/charts/${chartId}`),
-  reorderCharts: (id, order) => apiCall("PUT", `/api/dashboards/${id}/charts/reorder`, order),
+  reorderCharts: (id, chartIds) => apiCall("PUT", `/api/dashboards/${id}/charts/reorder`, { chart_ids: chartIds }),
 };
 
 /**
