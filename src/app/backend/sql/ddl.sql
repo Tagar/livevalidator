@@ -336,3 +336,10 @@ CREATE TABLE IF NOT EXISTS control.dashboard_charts (
 );
 
 CREATE INDEX IF NOT EXISTS dashboard_charts_dashboard_idx ON control.dashboard_charts (dashboard_id);
+
+
+-- [ Schema migrations ] Add columns introduced after initial release
+
+-- 1) Add lineage column to datasets and compare_queries
+ALTER TABLE control.datasets ADD COLUMN IF NOT EXISTS lineage JSONB DEFAULT NULL;
+ALTER TABLE control.compare_queries ADD COLUMN IF NOT EXISTS lineage JSONB DEFAULT NULL;
