@@ -3,6 +3,7 @@ import { ErrorBox } from '../components/ErrorBox';
 import { Checkbox } from '../components/Checkbox';
 import { TagList, TagBadge } from '../components/TagBadge';
 import { apiCall, triggerService } from '../services/api';
+import { useTagFilter } from '../hooks/useTagFilter';
 
 export function QueueView({ 
   triggers, 
@@ -12,16 +13,10 @@ export function QueueView({
 }) {
   const [filterText, setFilterText] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [filterTags, setFilterTags] = useState([]);
-  const [tagInput, setTagInput] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [launching, setLaunching] = useState(new Set());
   const [repairing, setRepairing] = useState(new Set());
-  const tagInputRef = useRef(null);
-  const inputElementRef = useRef(null);
 
   const isStale = (trigger) => {
     if (trigger.status !== 'running' || !trigger.started_at) return false;
@@ -52,6 +47,12 @@ export function QueueView({
     return Array.from(tagSet).sort();
   }, [triggers.data]);
 
+  const {
+    filterTags, tagInput, setTagInput, showSuggestions, setShowSuggestions,
+    selectedSuggestionIndex, tagInputRef, inputElementRef, tagSuggestions,
+    addTagFilter, removeTagFilter, clearTags, handleTagKeyDown, filterByTags,
+  } = useTagFilter(allTags);
+
   // Filter triggers
   const filteredData = useMemo(() => {
     let result = triggers.data || [];
@@ -68,15 +69,10 @@ export function QueueView({
       result = result.filter(t => t.status === filterStatus);
     }
     
-    if (filterTags.length > 0) {
-      result = result.filter(t => {
-        const tags = parseTags(t.entity_tags);
-        return filterTags.every(ft => tags.includes(ft));
-      });
-    }
+    result = filterByTags(result, t => parseTags(t.entity_tags));
     
     return result;
-  }, [triggers.data, filterText, filterStatus, filterTags]);
+  }, [triggers.data, filterText, filterStatus, filterByTags]);
 
   // Selection handlers
   const handleSelectAll = (checked) => {
@@ -225,62 +221,6 @@ export function QueueView({
       });
     }
   };
-
-  // Tag filter handlers
-  const addTagFilter = (tag) => {
-    if (tag && !filterTags.includes(tag)) {
-      setFilterTags(prev => [...prev, tag]);
-    }
-    setTagInput('');
-    setShowSuggestions(false);
-    setSelectedSuggestionIndex(0);
-  };
-
-  const removeTagFilter = (tag) => {
-    setFilterTags(prev => prev.filter(t => t !== tag));
-  };
-
-  const tagSuggestions = useMemo(() => {
-    if (!tagInput.trim()) return [];
-    const input = tagInput.toLowerCase();
-    return allTags
-      .filter(tag => tag.toLowerCase().includes(input) && !filterTags.includes(tag))
-      .slice(0, 10);
-  }, [tagInput, allTags, filterTags]);
-
-  useEffect(() => {
-    setSelectedSuggestionIndex(0);
-  }, [tagSuggestions]);
-
-  const handleTagKeyDown = (e) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedSuggestionIndex(prev => Math.min(prev + 1, tagSuggestions.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedSuggestionIndex(prev => Math.max(prev - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (tagSuggestions.length > 0) {
-        addTagFilter(tagSuggestions[selectedSuggestionIndex]);
-      }
-    } else if (e.key === 'Escape') {
-      setShowSuggestions(false);
-      setTagInput('');
-    } else if (e.key === 'Backspace' && !tagInput && filterTags.length > 0) {
-      removeTagFilter(filterTags[filterTags.length - 1]);
-    }
-  };
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (tagInputRef.current && !tagInputRef.current.contains(e.target)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const allFilteredSelected = filteredData.length > 0 && filteredData.every(t => selectedIds.has(t.id));
   const someSelected = selectedIds.size > 0;

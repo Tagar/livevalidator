@@ -3,6 +3,7 @@ import { ErrorBox } from '../components/ErrorBox';
 import { TagList, TagBadge } from '../components/TagBadge';
 import { BulkTagModal } from '../components/TagInput';
 import { Checkbox } from '../components/Checkbox';
+import { useTagFilter } from '../hooks/useTagFilter';
 
 export function TablesView({ 
   data, 
@@ -24,16 +25,10 @@ export function TablesView({
 }) {
   const [filterText, setFilterText] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [filterTags, setFilterTags] = useState([]);
-  const [tagInput, setTagInput] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBulkTagModal, setShowBulkTagModal] = useState(false);
   const [bulkTagMode, setBulkTagMode] = useState('add');
-  const tagInputRef = useRef(null);
-  const inputElementRef = useRef(null);
   const highlightedRowRef = useRef(null);
 
   // Scroll to and highlight the row when highlightEntityId changes
@@ -75,6 +70,12 @@ export function TablesView({
     return Array.from(tagSet).sort();
   }, [data]);
 
+  const {
+    filterTags, tagInput, setTagInput, showSuggestions, setShowSuggestions,
+    selectedSuggestionIndex, tagInputRef, inputElementRef, tagSuggestions,
+    addTagFilter, removeTagFilter, clearTags, handleTagKeyDown, filterByTags,
+  } = useTagFilter(allTags);
+
   // Filter data based on search text, status, and tags
   const filteredData = useMemo(() => {
     let result = data;
@@ -99,13 +100,8 @@ export function TablesView({
       }
     }
     
-    // Apply tag filter (AND logic - must have all selected tags)
-    if (filterTags.length > 0) {
-      result = result.filter(row => {
-        const rowTags = parseTags(row.tags);
-        return filterTags.every(filterTag => rowTags.includes(filterTag));
-      });
-    }
+    // Apply tag filter
+    result = filterByTags(result, row => parseTags(row.tags));
     
     // Sort: enabled items first, disabled items last
     result.sort((a, b) => {
@@ -114,7 +110,7 @@ export function TablesView({
     });
     
     return result;
-  }, [data, filterText, filterStatus, filterTags]);
+  }, [data, filterText, filterStatus, filterByTags]);
 
   // Handle select all (only filtered items)
   const handleSelectAll = (checked) => {
@@ -197,67 +193,6 @@ export function TablesView({
       console.error('Error updating tags:', err);
     }
   };
-
-  const addTagFilter = (tag) => {
-    if (tag && !filterTags.includes(tag)) {
-      setFilterTags(prev => [...prev, tag]);
-    }
-    setTagInput('');
-    setShowSuggestions(false);
-    setSelectedSuggestionIndex(0);
-  };
-
-  const removeTagFilter = (tag) => {
-    setFilterTags(prev => prev.filter(t => t !== tag));
-  };
-
-  // Filter suggestions based on input
-  const tagSuggestions = useMemo(() => {
-    if (!tagInput.trim()) return [];
-    const input = tagInput.toLowerCase();
-    return allTags
-      .filter(tag => tag.toLowerCase().includes(input) && !filterTags.includes(tag))
-      .slice(0, 10);
-  }, [tagInput, allTags, filterTags]);
-
-  // Reset selected index when suggestions change
-  useEffect(() => {
-    setSelectedSuggestionIndex(0);
-  }, [tagSuggestions]);
-
-  const handleTagKeyDown = (e) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedSuggestionIndex(prev => 
-        Math.min(prev + 1, tagSuggestions.length - 1)
-      );
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedSuggestionIndex(prev => Math.max(prev - 1, 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (tagSuggestions.length > 0) {
-        addTagFilter(tagSuggestions[selectedSuggestionIndex]);
-      }
-    } else if (e.key === 'Escape') {
-      setShowSuggestions(false);
-      setTagInput('');
-    } else if (e.key === 'Backspace' && !tagInput && filterTags.length > 0) {
-      // Remove last tag when backspace is pressed on empty input
-      removeTagFilter(filterTags[filterTags.length - 1]);
-    }
-  };
-
-  // Close suggestions when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (tagInputRef.current && !tagInputRef.current.contains(e.target)) {
-        setShowSuggestions(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const allFilteredSelected = filteredData.length > 0 && filteredData.every(row => selectedIds.has(row.id));
   const someSelected = selectedIds.size > 0;

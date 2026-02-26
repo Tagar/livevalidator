@@ -78,26 +78,22 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
   const [showSystemPicker, setShowSystemPicker] = useState(false);
 
   // Fetch all runs for this entity
-  useEffect(() => {
-    let cancelled = false;
+  const fetchRuns = () => {
     setRunsLoading(true);
     fetch(`/api/validation-history?entity_type=${entityType}&entity_id=${entity.id}&days_back=7&limit=100`)
       .then(r => r.json())
       .then(resp => {
-        if (!cancelled) {
-          const runs = resp.data || [];
-          setRuns(runs);
-          setRunsLoading(false);
-          if (runs.length > 0) {
-            setSelectedRunId(runs[0].id);
-          }
+        const data = resp.data || [];
+        setRuns(data);
+        setRunsLoading(false);
+        if (data.length > 0 && !selectedRunId) {
+          setSelectedRunId(data[0].id);
         }
       })
-      .catch(() => {
-        if (!cancelled) { setRuns([]); setRunsLoading(false); }
-      });
-    return () => { cancelled = true; };
-  }, [entity.id, entityType]);
+      .catch(() => { setRuns([]); setRunsLoading(false); });
+  };
+
+  useEffect(() => { fetchRuns(); }, [entity.id, entityType]);
 
   // Fetch detail when selected run changes
   useEffect(() => {
@@ -180,6 +176,7 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
     setTriggerRunning(true);
     try {
       await onTrigger(entityType, entity.id);
+      setTimeout(fetchRuns, 1000);
     } finally {
       setTriggerRunning(false);
     }
@@ -226,6 +223,12 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => { onRefresh?.(); fetchRuns(); }}
+              className="px-3 py-1.5 text-sm bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium"
+            >
+              Refresh
+            </button>
             <button
               onClick={handleEditConfig}
               className="px-3 py-1.5 text-sm bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium inline-flex items-center gap-1.5"
@@ -449,6 +452,13 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
             Validation Runs (Last 7 Days)
             {runs && <span className="text-gray-400 font-normal ml-2">— {runs.length} run{runs.length !== 1 ? 's' : ''}</span>}
           </h3>
+          <button
+            onClick={fetchRuns}
+            disabled={runsLoading}
+            className="px-2 py-1 text-xs bg-purple-600 text-gray-100 border-0 rounded cursor-pointer hover:bg-purple-500 transition-colors font-medium disabled:opacity-50"
+          >
+            Refresh
+          </button>
         </div>
 
         {runsLoading ? (
@@ -782,9 +792,18 @@ export function AnalysisView({
         <ErrorBox message={error.message} onClose={tablesError ? onClearTablesError : onClearQueriesError} />
       )}
 
-      <div className="mb-4">
-        <h2 className="text-3xl font-bold text-rust-light mb-1">Analysis</h2>
-        <p className="text-gray-400 text-base">Showing tables and queries whose latest validation run failed. Click any row to investigate.</p>
+      <div className="mb-4 flex items-start justify-between">
+        <div>
+          <h2 className="text-3xl font-bold text-rust-light mb-1">Analysis</h2>
+          <p className="text-gray-400 text-base">Showing tables and queries whose latest validation run failed. Click any row to investigate.</p>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          className="px-3 py-2 text-base bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 transition-colors font-medium disabled:opacity-50"
+        >
+          Refresh
+        </button>
       </div>
 
       {loading ? (
