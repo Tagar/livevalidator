@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ErrorBox } from '../components/ErrorBox';
 import { TagList } from '../components/TagBadge';
+import { ResultFilterBar } from '../components/ResultFilterBar';
+import { useTagFilter } from '../hooks/useTagFilter';
 import { LineageModal } from '../components/modals/LineageModal';
-import { SampleDifferencesModal } from '../components/modals/SampleDifferencesModal';
+import { SampleDifferencesContent } from '../components/modals/SampleDifferencesModal';
 
 function parseLineageData(raw) {
   if (!raw) return { items: null, entityObjectType: null };
@@ -60,11 +62,11 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
   const [selectedRunId, setSelectedRunId] = useState(null);
   const [selectedRunDetail, setSelectedRunDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [sampleModal, setSampleModal] = useState(null);
   const [lineageModal, setLineageModal] = useState({ open: false, lineage: [], lineageSystem: null });
   const [fetchingLineage, setFetchingLineage] = useState(false);
   const [triggerRunning, setTriggerRunning] = useState(false);
   const [toast, setToast] = useState(null);
+  const [sqlExpanded, setSqlExpanded] = useState(false);
 
   const entityType = entity._entityType === 'table' ? 'table' : 'compare_query';
   const apiPath = entity._entityType === 'table' ? 'tables' : 'queries';
@@ -81,13 +83,13 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
     setRunsLoading(true);
     fetch(`/api/validation-history?entity_type=${entityType}&entity_id=${entity.id}&days_back=7&limit=100`)
       .then(r => r.json())
-      .then(data => {
+      .then(resp => {
         if (!cancelled) {
-          setRuns(data || []);
+          const runs = resp.data || [];
+          setRuns(runs);
           setRunsLoading(false);
-          // Auto-select latest run
-          if (data && data.length > 0) {
-            setSelectedRunId(data[0].id);
+          if (runs.length > 0) {
+            setSelectedRunId(runs[0].id);
           }
         }
       })
@@ -222,26 +224,6 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
                 <TagList tags={entity._parsedTags} maxVisible={5} />
               )}
             </div>
-            {entity._entityType === 'table' ? (
-              <div className="flex items-center gap-2 mt-1">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider">Src</span>
-                  <span className="text-sm font-mono text-blue-300">{entity.src_schema || '—'}.{entity.src_table || '—'}</span>
-                  <span className="text-xs text-gray-500">({entity._srcSystemName}{entity._srcSystemKind ? ` · ${entity._srcSystemKind}` : ''})</span>
-                </span>
-                <span className="text-gray-600 mx-1">→</span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="text-[10px] text-gray-500 uppercase tracking-wider">Tgt</span>
-                  <span className="text-sm font-mono text-green-300">{entity.tgt_schema || '—'}.{entity.tgt_table || '—'}</span>
-                  <span className="text-xs text-gray-500">({entity._tgtSystemName}{entity._tgtSystemKind ? ` · ${entity._tgtSystemKind}` : ''})</span>
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider">SQL</span>
-                <span className="text-sm font-mono text-gray-400 truncate max-w-lg" title={entity.sql}>{(entity.sql || '—').substring(0, 120)}</span>
-              </div>
-            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
@@ -262,40 +244,41 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
       </div>
 
       {/* Configuration Summary — single line */}
-      <div className="bg-charcoal-500 border border-charcoal-200 rounded-lg px-4 py-2.5 mb-5 flex items-center gap-3 flex-wrap text-xs">
+      <div className="bg-charcoal-600 border border-charcoal-300 rounded-lg px-4 py-2.5 mb-5 flex items-center gap-3 flex-wrap text-xs">
         {entity._entityType === 'table' ? (
           <>
-            <span className="inline-flex items-center gap-1.5 bg-charcoal-400 rounded px-2 py-1">
-              <span className="text-gray-500 uppercase tracking-wider text-[10px]">Src</span>
-              <span className="text-gray-200 font-mono">{entity.src_schema || '—'}.{entity.src_table || '—'}</span>
+            <span className="inline-flex items-center gap-1.5 bg-charcoal-500 rounded px-2 py-1">
+              <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Src</span>
+              <span className="text-gray-100 font-mono">{entity.src_schema || '—'}.{entity.src_table || '—'}</span>
+              <span className="text-gray-400">({entity._srcSystemName}{entity._srcSystemKind ? ` · ${entity._srcSystemKind}` : ''})</span>
             </span>
-            <span className="text-charcoal-200">→</span>
-            <span className="inline-flex items-center gap-1.5 bg-charcoal-400 rounded px-2 py-1">
-              <span className="text-gray-500 uppercase tracking-wider text-[10px]">Tgt</span>
-              <span className="text-gray-200 font-mono">{entity.tgt_schema || '—'}.{entity.tgt_table || '—'}</span>
+            <span className="text-rust-light text-base font-bold">→</span>
+            <span className="inline-flex items-center gap-1.5 bg-charcoal-500 rounded px-2 py-1">
+              <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Tgt</span>
+              <span className="text-gray-100 font-mono">{entity.tgt_schema || '—'}.{entity.tgt_table || '—'}</span>
+              <span className="text-gray-400">({entity._tgtSystemName}{entity._tgtSystemKind ? ` · ${entity._tgtSystemKind}` : ''})</span>
             </span>
           </>
         ) : (
-          <span className="inline-flex items-center gap-1.5 bg-charcoal-400 rounded px-2 py-1">
-            <span className="text-gray-500 uppercase tracking-wider text-[10px]">SQL</span>
-            <span className="text-gray-200 font-mono truncate max-w-xs" title={entity.sql}>{(entity.sql || '—').substring(0, 80)}</span>
-          </span>
+          <button
+            onClick={() => setSqlExpanded(!sqlExpanded)}
+            className="inline-flex items-center gap-1.5 bg-charcoal-500 rounded px-2 py-1 hover:bg-charcoal-400 transition-colors cursor-pointer"
+            title="Click to expand/collapse SQL"
+          >
+            <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">SQL</span>
+            <span className="text-gray-100 font-mono truncate max-w-xs">{(entity.sql || '—').substring(0, 60)}{(entity.sql?.length || 0) > 60 ? '…' : ''}</span>
+            <span className="text-gray-400 text-[10px]">{sqlExpanded ? '▲' : '▼'}</span>
+          </button>
         )}
-        <span className="w-px h-4 bg-charcoal-200" />
-        <span className="inline-flex items-center gap-1.5 bg-charcoal-400 rounded px-2 py-1">
-          <span className="text-gray-500 uppercase tracking-wider text-[10px]">Mode</span>
-          <span className="text-gray-200">{entity.compare_mode || '—'}</span>
+        <span className="w-px h-4 bg-charcoal-300" />
+        <span className="inline-flex items-center gap-1.5 bg-charcoal-500 rounded px-2 py-1">
+          <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Mode</span>
+          <span className="text-gray-100">{entity.compare_mode || '—'}</span>
         </span>
-        {entity.pk_columns && entity.pk_columns.length > 0 && (
-          <span className="inline-flex items-center gap-1.5 bg-charcoal-400 rounded px-2 py-1">
-            <span className="text-gray-500 uppercase tracking-wider text-[10px]">PK</span>
-            <span className="text-gray-200 font-mono">{Array.isArray(entity.pk_columns) ? entity.pk_columns.join(', ') : entity.pk_columns}</span>
-          </span>
-        )}
         {scheduleName && (
-          <span className="inline-flex items-center gap-1.5 bg-charcoal-400 rounded px-2 py-1">
-            <span className="text-gray-500 uppercase tracking-wider text-[10px]">Schedule</span>
-            <span className="text-gray-200">{scheduleName}</span>
+          <span className="inline-flex items-center gap-1.5 bg-charcoal-500 rounded px-2 py-1">
+            <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Schedule</span>
+            <span className="text-gray-100">{scheduleName}</span>
           </span>
         )}
         <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-semibold uppercase tracking-wider ${
@@ -313,11 +296,31 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
         </button>
       </div>
 
-      {/* Lineage + PK Discovery — side by side */}
+      {/* Expanded SQL View */}
+      {entity._entityType !== 'table' && sqlExpanded && entity.sql && (
+        <div className="bg-charcoal-600 border border-charcoal-300 rounded-lg p-4 mb-5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Full SQL Query</span>
+            <button
+              onClick={() => navigator.clipboard.writeText(entity.sql)}
+              className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+            >
+              Copy
+            </button>
+          </div>
+          <pre className="text-gray-100 font-mono text-sm whitespace-pre-wrap bg-charcoal-700 rounded p-3 overflow-x-auto">{entity.sql}</pre>
+        </div>
+      )}
+
+      {/* Lineage + PK Info — side by side */}
       {(() => {
-        const showPK = entity._entityType === 'table' && entity.compare_mode === 'except_all' && (!entity.pk_columns || (Array.isArray(entity.pk_columns) ? entity.pk_columns.length === 0 : !entity.pk_columns));
+        const hasPKColumns = entity.pk_columns && (Array.isArray(entity.pk_columns) ? entity.pk_columns.length > 0 : !!entity.pk_columns);
+        const isPKMode = entity.compare_mode === 'primary_key';
+        const needsPKDiscovery = entity._entityType === 'table' && entity.compare_mode === 'except_all' && !hasPKColumns;
+        const showRightPanel = entity._entityType === 'table' && (isPKMode || needsPKDiscovery);
+        
         const lineageSection = entity._entityType === 'table' ? (
-          <div className={`bg-charcoal-500 border border-charcoal-200 border-l-4 border-l-rust rounded-lg p-3 ${showPK ? 'flex-1 min-w-0' : 'w-full'}`}>
+          <div className={`bg-charcoal-500 border border-charcoal-200 border-l-4 border-l-rust rounded-lg p-3 ${showRightPanel ? 'flex-1 min-w-0' : 'w-full'}`}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <h3 className="text-sm font-semibold text-gray-200">Upstream Lineage</h3>
@@ -396,7 +399,21 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
           </div>
         );
 
-        const pkSection = showPK ? (
+        const rightSection = isPKMode && hasPKColumns ? (
+          <div className="bg-charcoal-500 border border-charcoal-200 border-l-4 border-l-rust rounded-lg p-3 flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-2">
+              <h3 className="text-sm font-semibold text-gray-200">Primary Key Configuration</h3>
+              <span className="text-xs text-green-400">Configured</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(Array.isArray(entity.pk_columns) ? entity.pk_columns : [entity.pk_columns]).map((col, i) => (
+                <span key={i} className="px-2 py-1 bg-charcoal-400 text-rust-light font-mono text-xs rounded border border-charcoal-300">
+                  {col}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : needsPKDiscovery ? (
           <div className="bg-charcoal-500 border border-charcoal-200 border-l-4 border-l-rust rounded-lg p-3 flex-1 min-w-0">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-3">
@@ -418,15 +435,15 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
         ) : null;
 
         return (
-          <div className={`mb-5 ${showPK ? 'flex gap-4' : ''}`}>
+          <div className={`mb-5 ${showRightPanel ? 'flex gap-4' : ''}`}>
             {lineageSection}
-            {pkSection}
+            {rightSection}
           </div>
         );
       })()}
 
       {/* Run History Section */}
-      <div className="bg-charcoal-500 border border-charcoal-200 border-l-4 border-l-rust rounded-lg flex flex-col" style={{ minHeight: 'calc(100vh - 480px)' }}>
+      <div className="bg-charcoal-500 border border-charcoal-200 border-l-4 border-l-rust rounded-lg flex flex-col">
         <div className="p-3 border-b border-charcoal-200 bg-charcoal-400 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-200">
             Validation Runs (Last 7 Days)
@@ -503,87 +520,32 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
               ) : !selectedRunDetail ? (
                 <div className="p-6 text-gray-500 text-sm">Select a run from the list to view details.</div>
               ) : (
-                <div className="p-4 space-y-4">
-                  {/* Run summary: header + metrics */}
-                  <div className="bg-charcoal-600 border border-charcoal-300 rounded-lg p-4 space-y-3">
-                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Run summary</h4>
-                    <div className="flex items-center gap-3 flex-wrap">
-                      {(() => {
-                        const badge = STATUS_BADGE[selectedRunDetail.status] || STATUS_BADGE.error;
-                        return (
-                          <span className={`px-2 py-1 text-xs rounded-full border ${badge.cls}`}>
-                            {badge.icon} {badge.label}
-                          </span>
-                        );
-                      })()}
-                      <span className="text-gray-300 text-sm">
-                        {new Date(selectedRunDetail.requested_at).toLocaleString()}
-                      </span>
-                      <span className="text-gray-500 text-xs">
-                        {selectedRunDetail.source_system_name} → {selectedRunDetail.target_system_name}
-                      </span>
-                      {selectedRunDetail.databricks_run_url && (
-                        <a
-                          href={selectedRunDetail.databricks_run_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-purple-400 hover:text-purple-300 underline text-xs ml-auto"
-                        >
-                          View Notebook →
-                        </a>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="bg-charcoal-600 border border-charcoal-300 rounded p-2.5">
-                      <div className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Compare Mode</div>
-                      <div className="text-gray-200 text-sm font-medium">{selectedRunDetail.compare_mode}</div>
-                    </div>
-                    <div className="bg-charcoal-600 border border-charcoal-300 rounded p-2.5">
-                      <div className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Duration</div>
-                      <div className="text-gray-200 text-sm font-medium">
-                        {selectedRunDetail.duration_seconds != null ? `${(selectedRunDetail.duration_seconds / 60).toFixed(1)} min` : '-'}
-                      </div>
-                    </div>
-                    <div className={`border rounded p-2.5 ${
-                      selectedRunDetail.row_count_match === false
-                        ? 'bg-red-900/20 border-red-700'
-                        : selectedRunDetail.row_count_match === true
-                        ? 'bg-green-900/20 border-green-700'
-                        : 'bg-charcoal-600 border-charcoal-300'
-                    }`}>
-                      <div className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Row Count (Src / Tgt)</div>
-                      <div className={`text-sm font-medium ${
-                        selectedRunDetail.row_count_match === false ? 'text-red-300' :
-                        selectedRunDetail.row_count_match === true ? 'text-green-300' : 'text-gray-200'
-                      }`}>
-                        {selectedRunDetail.row_count_source?.toLocaleString() ?? '-'} / {selectedRunDetail.row_count_target?.toLocaleString() ?? '-'}
-                      </div>
-                    </div>
-                    <div className={`border rounded p-2.5 ${
-                      (selectedRunDetail.rows_different || 0) > 0
-                        ? 'bg-red-900/20 border-red-700'
-                        : selectedRunDetail.rows_different === 0
-                        ? 'bg-green-900/20 border-green-700'
-                        : 'bg-charcoal-600 border-charcoal-300'
-                    }`}>
-                      <div className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Differences</div>
-                      <div className={`text-sm font-medium ${
-                        (selectedRunDetail.rows_different || 0) > 0 ? 'text-red-300' :
-                        selectedRunDetail.rows_different === 0 ? 'text-green-300' : 'text-gray-200'
-                      }`}>
-                        {selectedRunDetail.rows_different != null ? `${selectedRunDetail.rows_different.toLocaleString()} (${selectedRunDetail.difference_pct}%)` : '-'}
-                      </div>
-                    </div>
+                <div className="p-4 space-y-3">
+                  {/* Compact run summary */}
+                  <div className="flex items-center gap-3 text-xs flex-wrap">
+                    {(() => {
+                      const badge = STATUS_BADGE[selectedRunDetail.status] || STATUS_BADGE.error;
+                      return <span className={`px-1.5 py-0.5 rounded border ${badge.cls}`}>{badge.icon} {badge.label}</span>;
+                    })()}
+                    <span className="text-gray-400">{new Date(selectedRunDetail.requested_at).toLocaleString()}</span>
+                    <span className="text-gray-500">•</span>
+                    <span className="text-gray-400">{selectedRunDetail.compare_mode}</span>
+                    <span className="text-gray-500">•</span>
+                    <span className="text-gray-400">{selectedRunDetail.duration_seconds != null ? `${(selectedRunDetail.duration_seconds / 60).toFixed(1)}m` : '-'}</span>
+                    <span className="text-gray-500">•</span>
+                    <span className={selectedRunDetail.row_count_match === false ? 'text-red-300' : selectedRunDetail.row_count_match === true ? 'text-green-300' : 'text-gray-400'}>
+                      {selectedRunDetail.row_count_source?.toLocaleString() ?? '-'} / {selectedRunDetail.row_count_target?.toLocaleString() ?? '-'} rows
+                    </span>
+                    <span className="text-gray-500">•</span>
+                    <span className={(selectedRunDetail.rows_different || 0) > 0 ? 'text-red-300' : selectedRunDetail.rows_different === 0 ? 'text-green-300' : 'text-gray-400'}>
+                      {selectedRunDetail.rows_different != null ? `${selectedRunDetail.rows_different.toLocaleString()} diff (${selectedRunDetail.difference_pct}%)` : '-'}
+                    </span>
+                    {selectedRunDetail.databricks_run_url && (
+                      <a href={selectedRunDetail.databricks_run_url} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline ml-auto">
+                        Notebook →
+                      </a>
+                    )}
                   </div>
-                  </div>
-
-                  {/* PK columns */}
-                  {selectedRunDetail.pk_columns && selectedRunDetail.pk_columns.length > 0 && (
-                    <div className="text-xs">
-                      <span className="text-gray-500">PK Columns: </span>
-                      <span className="text-rust-light font-mono">{selectedRunDetail.pk_columns.join(', ')}</span>
-                    </div>
-                  )}
 
                   {/* Error message */}
                   {selectedRunDetail.error_message && (
@@ -593,27 +555,13 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
                     </div>
                   )}
 
-                  {/* Mismatch analysis: show when there are differences or (non-success and we have difference data) */}
+                  {/* Inline Mismatch Analysis */}
                   {((selectedRunDetail.rows_different || 0) > 0 || selectedRunDetail.row_count_match === false || (selectedRunDetail.status !== 'succeeded' && selectedRunDetail.sample_differences)) && (
-                    <div>
-                      <button
-                        onClick={() => setSampleModal(selectedRunDetail)}
-                        className="px-4 py-2 rounded text-sm font-medium bg-rust/80 text-white border border-rust-light hover:bg-rust transition-colors cursor-pointer"
-                      >
-                        View Mismatch Analysis
-                      </button>
+                    <div className="border border-charcoal-300 rounded-lg">
+                      <SampleDifferencesContent validation={selectedRunDetail} />
                     </div>
                   )}
 
-                  {/* Schema match */}
-                  {selectedRunDetail.schema_match !== null && selectedRunDetail.schema_match !== undefined && (
-                    <div className="text-xs">
-                      <span className="text-gray-500">Schema Match: </span>
-                      <span className={selectedRunDetail.schema_match ? 'text-green-300' : 'text-red-300'}>
-                        {selectedRunDetail.schema_match ? '✓ Yes' : '✗ No'}
-                      </span>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -651,14 +599,6 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
         lineageSystem={lineageModal.lineageSystem}
         entityTableType={entityObjectType || ''}
       />
-
-      {/* Sample Differences Modal */}
-      {sampleModal && (
-        <SampleDifferencesModal
-          validation={sampleModal}
-          onClose={() => setSampleModal(null)}
-        />
-      )}
 
       {/* Toast */}
       {toast && (
@@ -699,6 +639,8 @@ export function AnalysisView({
 }) {
   const [filterText, setFilterText] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [sourceSystem, setSourceSystem] = useState('');
+  const [targetSystem, setTargetSystem] = useState('');
   const [selectedEntity, setSelectedEntity] = useState(null);
 
   // Keep selectedEntity in sync with latest data after edits/refreshes
@@ -752,8 +694,35 @@ export function AnalysisView({
     return result;
   }, [tables, queries, systems]);
 
+  const allTags = useMemo(() => {
+    const tagSet = new Set();
+    for (const e of entities) {
+      if (e.last_run_status === 'failed' || e.last_run_status === 'error') {
+        for (const tag of (e._parsedTags || [])) {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return Array.from(tagSet).sort();
+  }, [entities]);
+
+  const availableSystems = useMemo(() => {
+    const sysSet = new Set();
+    for (const e of entities) {
+      if (e._srcSystemName) sysSet.add(e._srcSystemName);
+      if (e._tgtSystemName) sysSet.add(e._tgtSystemName);
+    }
+    return Array.from(sysSet).sort();
+  }, [entities]);
+
+  const {
+    filterTags, tagInput, setTagInput, showSuggestions, setShowSuggestions,
+    selectedSuggestionIndex, tagInputRef, inputElementRef, tagSuggestions,
+    addTagFilter, removeTagFilter, clearTags, handleTagKeyDown, filterByTags,
+  } = useTagFilter(allTags);
+
   const filtered = useMemo(() => {
-    let result = entities.filter(e => e.last_run_status === 'failed');
+    let result = entities.filter(e => e.last_run_status === 'failed' || e.last_run_status === 'error');
     if (filterText) {
       const term = filterText.toLowerCase();
       result = result.filter(e => e.name.toLowerCase().includes(term));
@@ -761,8 +730,28 @@ export function AnalysisView({
     if (filterType) {
       result = result.filter(e => e._entityType === filterType);
     }
-    return result.sort((a, b) => a.name.localeCompare(b.name));
-  }, [entities, filterText, filterType]);
+    if (sourceSystem) {
+      result = result.filter(e => e._srcSystemName === sourceSystem);
+    }
+    if (targetSystem) {
+      result = result.filter(e => e._tgtSystemName === targetSystem);
+    }
+    result = filterByTags(result, e => e._parsedTags || []);
+    return result.sort((a, b) => {
+      const aTime = a.last_run_timestamp ? new Date(a.last_run_timestamp).getTime() : 0;
+      const bTime = b.last_run_timestamp ? new Date(b.last_run_timestamp).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [entities, filterText, filterType, sourceSystem, targetSystem, filterByTags]);
+
+  const hasActiveFilters = filterText || filterType || filterTags.length > 0 || sourceSystem || targetSystem;
+  const clearAllFilters = () => {
+    setFilterText('');
+    setFilterType('');
+    setSourceSystem('');
+    setTargetSystem('');
+    clearTags();
+  };
 
   // If an entity is selected, show the detail view
   if (selectedEntity) {
@@ -805,61 +794,51 @@ export function AnalysisView({
           className="bg-charcoal-500 border border-charcoal-200 rounded-lg flex flex-col"
           style={{ minHeight: filtered.length >= 8 ? 'calc(100vh - 350px)' : undefined }}
         >
-          {/* Filters */}
-          <div className="p-2 bg-charcoal-400 border-b border-charcoal-200">
-            <div className="flex items-center gap-2">
-              <span className="text-gray-300 text-sm font-semibold">Filters:</span>
-              <input
-                type="text"
-                placeholder="Search by name..."
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                className="px-2 py-1 bg-charcoal-600 border border-charcoal-300 rounded text-gray-200 text-sm focus:outline-none focus:border-rust-light flex-1 max-w-xs"
-              />
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="px-2 py-1 bg-charcoal-600 border border-charcoal-300 rounded text-gray-200 text-sm focus:outline-none focus:border-rust-light cursor-pointer"
-              >
-                <option value="">All Types</option>
-                <option value="table">Tables</option>
-                <option value="query">Queries</option>
-              </select>
-              {(filterText || filterType) && (
-                <button
-                  onClick={() => { setFilterText(''); setFilterType(''); }}
-                  className="px-2 py-1 text-sm rounded bg-red-900/40 text-red-300 border border-red-700 hover:bg-red-900/60 transition-all"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
+          <ResultFilterBar
+            entityName={filterText}
+            onEntityNameChange={setFilterText}
+            filterTags={filterTags}
+            tagInput={tagInput}
+            onTagInputChange={setTagInput}
+            showSuggestions={showSuggestions}
+            onShowSuggestionsChange={setShowSuggestions}
+            tagSuggestions={tagSuggestions}
+            selectedSuggestionIndex={selectedSuggestionIndex}
+            onAddTag={addTagFilter}
+            onRemoveTag={removeTagFilter}
+            onTagKeyDown={handleTagKeyDown}
+            tagInputRef={tagInputRef}
+            inputElementRef={inputElementRef}
+            entityType={filterType}
+            onEntityTypeChange={setFilterType}
+            showSystemFilters={true}
+            sourceSystem={sourceSystem}
+            onSourceSystemChange={setSourceSystem}
+            targetSystem={targetSystem}
+            onTargetSystemChange={setTargetSystem}
+            availableSystems={availableSystems}
+            hasActiveFilters={hasActiveFilters}
+            onClearAll={clearAllFilters}
+          />
 
           {/* Table */}
           <div className="flex-1 min-h-0 overflow-auto">
-            <table className="w-full min-w-[1100px]">
+            <table className="w-full min-w-[900px]">
               <thead className="sticky top-0 bg-charcoal-400 border-b border-charcoal-200 z-10">
                 <tr>
                   <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Display name</th>
-                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Configure Type</th>
+                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Type</th>
+                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Last Failure</th>
+                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Mode</th>
                   <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Tags</th>
-                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Source system</th>
-                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Target system</th>
-                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Source object</th>
-                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Target object</th>
+                  <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Source → Target</th>
                   <th className="text-left px-3 py-2 text-sm text-gray-300 font-semibold">Last run</th>
-                </tr>
-                <tr>
-                  <td colSpan={8} className="px-3 py-1 text-xs text-gray-500 bg-charcoal-400 border-b border-charcoal-200">
-                    Click a row to open run history and lineage.
-                  </td>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center p-8 text-gray-500 text-base">
+                    <td colSpan={7} className="text-center p-8 text-gray-500 text-base">
                       {entities.length === 0
                         ? 'No tables or queries configured yet.'
                         : 'No results match the current filters.'}
@@ -868,16 +847,14 @@ export function AnalysisView({
                 ) : (
                   filtered.map((entity) => {
                     const loadKey = `${entity._entityType}-${entity.id}`;
-                    const sourceObject = entity._entityType === 'table'
-                      ? `${entity.src_schema || ''}.${entity.src_table || ''}`.replace(/^\./, '') || '—'
-                      : (entity.sql || '').substring(0, 60) + ((entity.sql || '').length > 60 ? '...' : '') || '—';
-                    const targetObject = entity._entityType === 'table'
-                      ? `${entity.tgt_schema || ''}.${entity.tgt_table || ''}`.replace(/^\./, '') || '—'
-                      : '—';
                     const lastRunTime = entity.last_run_timestamp
                       ? new Date(entity.last_run_timestamp).toLocaleString()
                       : null;
                     const lastRunStatus = entity.last_run_status;
+                    const failureReason = lastRunStatus === 'error' ? 'Error' :
+                      entity.last_run_row_count_match === false ? 'Row count' :
+                      (entity.last_run_rows_different || 0) > 0 ? 'Diff' :
+                      lastRunStatus === 'failed' ? 'Failed' : null;
 
                     return (
                       <tr
@@ -898,34 +875,28 @@ export function AnalysisView({
                           </span>
                         </td>
                         <td className="px-3 py-2">
+                          {failureReason && (
+                            <span className={`px-1.5 py-0.5 text-xs rounded-full border ${
+                              lastRunStatus === 'error' ? 'bg-yellow-900/40 text-yellow-300 border-yellow-700' :
+                              failureReason === 'Row count' ? 'bg-red-900/40 text-red-300 border-red-700' :
+                              failureReason === 'Diff' ? 'bg-orange-900/40 text-orange-300 border-orange-700' :
+                              'bg-red-900/40 text-red-300 border-red-700'
+                            }`}>
+                              {failureReason}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1 text-gray-300 text-sm whitespace-nowrap">
+                          {entity.compare_mode || '—'}
+                        </td>
+                        <td className="px-3 py-2">
                           <TagList tags={entity._parsedTags} maxVisible={3} />
                         </td>
-                        <td className="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">
-                          {entity._srcSystemName}
+                        <td className="px-2 py-1.5 text-sm text-gray-400 whitespace-nowrap">
+                          {entity._srcSystemName} → {entity._tgtSystemName}
                         </td>
-                        <td className="px-3 py-2 text-sm text-gray-400 whitespace-nowrap">
-                          {entity._tgtSystemName}
-                        </td>
-                        <td className="px-3 py-2 text-sm text-gray-400 max-w-[180px] font-mono">
-                          <div className="truncate" title={sourceObject}>{sourceObject}</div>
-                        </td>
-                        <td className="px-3 py-2 text-sm text-gray-400 max-w-[180px] font-mono">
-                          <div className="truncate" title={targetObject}>{targetObject}</div>
-                        </td>
-                        <td className="px-3 py-2 text-sm whitespace-nowrap">
-                          {lastRunTime ? (
-                            <span className={`text-xs font-medium ${
-                              lastRunStatus === 'succeeded' ? 'text-green-300' :
-                              lastRunStatus === 'failed' ? 'text-red-300' :
-                              lastRunStatus === 'error' ? 'text-orange-300' :
-                              'text-gray-400'
-                            }`}>
-                              {lastRunStatus === 'succeeded' ? '✓' : lastRunStatus === 'failed' ? '✗' : lastRunStatus === 'error' ? '⚠' : '●'}{' '}
-                              {lastRunTime}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-500">Never run</span>
-                          )}
+                        <td className="px-3 py-2 text-xs text-gray-400 whitespace-nowrap">
+                          {lastRunTime || <span className="text-gray-500">Never run</span>}
                         </td>
                       </tr>
                     );

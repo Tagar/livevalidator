@@ -483,6 +483,8 @@ async def list_tables(q: Optional[str] = None):
                 vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp,
                 vh.error_message as last_run_error,
+                vh.row_count_match as last_run_row_count_match,
+                vh.rows_different as last_run_rows_different,
                 COALESCE(
                     (SELECT json_agg(t.name ORDER BY t.name)
                      FROM control.entity_tags et
@@ -499,7 +501,7 @@ async def list_tables(q: Optional[str] = None):
                 ) as schedules
             FROM control.datasets d
             LEFT JOIN LATERAL (
-                SELECT id, status, finished_at, error_message
+                SELECT id, status, finished_at, error_message, row_count_match, rows_different
                 FROM control.validation_history
                 WHERE entity_type = 'table' AND entity_id = d.id
                 ORDER BY finished_at DESC
@@ -516,6 +518,8 @@ async def list_tables(q: Optional[str] = None):
                 vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp,
                 vh.error_message as last_run_error,
+                vh.row_count_match as last_run_row_count_match,
+                vh.rows_different as last_run_rows_different,
                 COALESCE(
                     (SELECT json_agg(t.name ORDER BY t.name)
                      FROM control.entity_tags et
@@ -532,7 +536,7 @@ async def list_tables(q: Optional[str] = None):
                 ) as schedules
             FROM control.datasets d
             LEFT JOIN LATERAL (
-                SELECT id, status, finished_at, error_message
+                SELECT id, status, finished_at, error_message, row_count_match, rows_different
                 FROM control.validation_history
                 WHERE entity_type = 'table' AND entity_id = d.id
                 ORDER BY finished_at DESC
@@ -766,6 +770,8 @@ async def list_queries(q: Optional[str] = None):
                 vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp,
                 vh.error_message as last_run_error,
+                vh.row_count_match as last_run_row_count_match,
+                vh.rows_different as last_run_rows_different,
                 COALESCE(
                     (SELECT json_agg(t.name ORDER BY t.name)
                      FROM control.entity_tags et
@@ -782,7 +788,7 @@ async def list_queries(q: Optional[str] = None):
                 ) as schedules
             FROM control.compare_queries cq
             LEFT JOIN LATERAL (
-                SELECT id, status, finished_at, error_message
+                SELECT id, status, finished_at, error_message, row_count_match, rows_different
                 FROM control.validation_history
                 WHERE entity_type = 'compare_query' AND entity_id = cq.id
                 ORDER BY finished_at DESC
@@ -799,6 +805,8 @@ async def list_queries(q: Optional[str] = None):
                 vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp,
                 vh.error_message as last_run_error,
+                vh.row_count_match as last_run_row_count_match,
+                vh.rows_different as last_run_rows_different,
                 COALESCE(
                     (SELECT json_agg(t.name ORDER BY t.name)
                      FROM control.entity_tags et
@@ -815,7 +823,7 @@ async def list_queries(q: Optional[str] = None):
                 ) as schedules
             FROM control.compare_queries cq
             LEFT JOIN LATERAL (
-                SELECT id, status, finished_at, error_message
+                SELECT id, status, finished_at, error_message, row_count_match, rows_different
                 FROM control.validation_history
                 WHERE entity_type = 'compare_query' AND entity_id = cq.id
                 ORDER BY finished_at DESC
