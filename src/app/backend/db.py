@@ -1,7 +1,8 @@
 import os
 import ssl
-import asyncpg
 from pathlib import Path
+
+import asyncpg
 from dotenv import load_dotenv
 
 # Load environment variables from .env file (for local development)
@@ -22,7 +23,7 @@ PGPORT = os.getenv("PGPORT")
 # DB_DSN = os.getenv("DB_DSN")
 DB_DSN = f"postgresql://apprunner:beepboop123@{PGHOST}:{PGPORT}/{PGDATABASE}"
 
-DB_USE_SSL = os.getenv("PGSSLMODE")== "require"
+DB_USE_SSL = os.getenv("PGSSLMODE") == "require"
 DB_SSL_CA_FILE = os.getenv("DB_SSL_CA_FILE", "backend/databricks-ca.pem")
 
 # Fallback to Databricks Lakebase if DB_DSN not explicitly set
@@ -47,7 +48,7 @@ def _ssl_ctx():
         ctx = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH)
         if DB_SSL_CA_FILE:
             print(f"ℹ️  Custom CA file not found ({DB_SSL_CA_FILE}), using system defaults")
-    
+
     # Keep hostname verification and certificate validation enabled for security
     return ctx
 
@@ -58,7 +59,7 @@ async def init_pool():
     if pool is None:
         print(f"🔌 Connecting to database: {DB_DSN.split('@')[1] if '@' in DB_DSN else DB_DSN}")
         print(f"🔒 SSL enabled: {DB_USE_SSL}")
-        
+
         if DB_USE_SSL:
             pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=10, ssl=_ssl_ctx())
         else:

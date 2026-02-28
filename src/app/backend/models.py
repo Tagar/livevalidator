@@ -1,8 +1,9 @@
 """Pydantic models for request/response validation."""
 
-from typing import Optional, Literal
-from pydantic import BaseModel, Field, field_validator
+from typing import Literal
 from zoneinfo import ZoneInfo
+
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------- Tables ----------
@@ -12,59 +13,59 @@ class TableIn(BaseModel):
     src_schema: str
     src_table: str
     tgt_system_id: int
-    tgt_schema: Optional[str] = None
-    tgt_table: Optional[str] = None
-    compare_mode: Literal['except_all','primary_key','hash'] = 'except_all'
-    pk_columns: Optional[list[str]] = None
-    watermark_filter: Optional[str] = None
+    tgt_schema: str | None = None
+    tgt_table: str | None = None
+    compare_mode: Literal["except_all", "primary_key", "hash"] = "except_all"
+    pk_columns: list[str] | None = None
+    watermark_filter: str | None = None
     include_columns: list[str] = Field(default_factory=list)
     exclude_columns: list[str] = Field(default_factory=list)
     options: dict = Field(default_factory=dict)
     is_active: bool = True
 
-    @field_validator('name', 'src_schema', 'src_table')
+    @field_validator("name", "src_schema", "src_table")
     @classmethod
     def not_empty(cls, v: str, info) -> str:
         if not v or not v.strip():
-            raise ValueError(f'{info.field_name} cannot be empty')
+            raise ValueError(f"{info.field_name} cannot be empty")
         return v.strip()
 
 
 class TableUpdate(BaseModel):
-    name: Optional[str] = None
-    src_system_id: Optional[int] = None
-    src_schema: Optional[str] = None
-    src_table: Optional[str] = None
-    tgt_system_id: Optional[int] = None
-    tgt_schema: Optional[str] = None
-    tgt_table: Optional[str] = None
-    compare_mode: Optional[Literal['except_all','primary_key','hash']] = None
-    pk_columns: Optional[list[str]] = None
-    watermark_filter: Optional[str] = None
-    include_columns: Optional[list[str]] = None
-    exclude_columns: Optional[list[str]] = None
-    options: Optional[dict] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    src_system_id: int | None = None
+    src_schema: str | None = None
+    src_table: str | None = None
+    tgt_system_id: int | None = None
+    tgt_schema: str | None = None
+    tgt_table: str | None = None
+    compare_mode: Literal["except_all", "primary_key", "hash"] | None = None
+    pk_columns: list[str] | None = None
+    watermark_filter: str | None = None
+    include_columns: list[str] | None = None
+    exclude_columns: list[str] | None = None
+    options: dict | None = None
+    is_active: bool | None = None
     version: int
 
 
 class BulkTableItem(BaseModel):
-    name: Optional[str] = None
+    name: str | None = None
     src_schema: str
     src_table: str
-    tgt_schema: Optional[str] = None
-    tgt_table: Optional[str] = None
-    schedule_name: Optional[str] = None
-    compare_mode: Optional[Literal['except_all','primary_key','hash']] = 'except_all'
-    pk_columns: Optional[list[str]] = None
-    watermark_filter: Optional[str] = None
-    include_columns: Optional[list[str]] = None
-    exclude_columns: Optional[list[str]] = None
-    is_active: Optional[bool] = True
-    tags: Optional[list[str]] = None
+    tgt_schema: str | None = None
+    tgt_table: str | None = None
+    schedule_name: str | None = None
+    compare_mode: Literal["except_all", "primary_key", "hash"] | None = "except_all"
+    pk_columns: list[str] | None = None
+    watermark_filter: str | None = None
+    include_columns: list[str] | None = None
+    exclude_columns: list[str] | None = None
+    is_active: bool | None = True
+    tags: list[str] | None = None
     # Per-row system override (by name) - if provided, overrides the request-level system IDs
-    src_system_name: Optional[str] = None
-    tgt_system_name: Optional[str] = None
+    src_system_name: str | None = None
+    tgt_system_name: str | None = None
 
 
 class BulkTableRequest(BaseModel):
@@ -79,45 +80,45 @@ class QueryIn(BaseModel):
     src_system_id: int
     tgt_system_id: int
     sql: str
-    compare_mode: Literal['except_all','primary_key','hash'] = 'except_all'
-    pk_columns: Optional[list[str]] = None
-    watermark_filter: Optional[str] = None
+    compare_mode: Literal["except_all", "primary_key", "hash"] = "except_all"
+    pk_columns: list[str] | None = None
+    watermark_filter: str | None = None
     options: dict = Field(default_factory=dict)
     is_active: bool = True
 
-    @field_validator('name', 'sql')
+    @field_validator("name", "sql")
     @classmethod
     def not_empty(cls, v: str, info) -> str:
         if not v or not v.strip():
-            raise ValueError(f'{info.field_name} cannot be empty')
-        return v.strip() if info.field_name == 'name' else v
+            raise ValueError(f"{info.field_name} cannot be empty")
+        return v.strip() if info.field_name == "name" else v
 
 
 class QueryUpdate(BaseModel):
-    name: Optional[str] = None
-    src_system_id: Optional[int] = None
-    tgt_system_id: Optional[int] = None
-    sql: Optional[str] = None
-    compare_mode: Optional[Literal['except_all','primary_key','hash']] = None
-    pk_columns: Optional[list[str]] = None
-    watermark_filter: Optional[str] = None
-    options: Optional[dict] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    src_system_id: int | None = None
+    tgt_system_id: int | None = None
+    sql: str | None = None
+    compare_mode: Literal["except_all", "primary_key", "hash"] | None = None
+    pk_columns: list[str] | None = None
+    watermark_filter: str | None = None
+    options: dict | None = None
+    is_active: bool | None = None
     version: int
 
 
 class BulkQueryItem(BaseModel):
-    name: Optional[str] = None
+    name: str | None = None
     sql: str
-    schedule_name: Optional[str] = None
-    compare_mode: Optional[Literal['except_all','primary_key','hash']] = 'except_all'
-    pk_columns: Optional[list[str]] = None
-    watermark_filter: Optional[str] = None
-    is_active: Optional[bool] = True
-    tags: Optional[list[str]] = None
+    schedule_name: str | None = None
+    compare_mode: Literal["except_all", "primary_key", "hash"] | None = "except_all"
+    pk_columns: list[str] | None = None
+    watermark_filter: str | None = None
+    is_active: bool | None = True
+    tags: list[str] | None = None
     # Per-row system override (by name) - if provided, overrides the request-level system IDs
-    src_system_name: Optional[str] = None
-    tgt_system_name: Optional[str] = None
+    src_system_name: str | None = None
+    tgt_system_name: str | None = None
 
 
 class BulkQueryRequest(BaseModel):
@@ -130,12 +131,12 @@ class BulkQueryRequest(BaseModel):
 class ScheduleIn(BaseModel):
     name: str
     cron_expr: str
-    timezone: str = 'UTC'
+    timezone: str = "UTC"
     enabled: bool = True
     max_concurrency: int = 4
-    backfill_policy: Literal['none','catch_up','skip_missed'] = 'none'
-    
-    @field_validator('timezone')
+    backfill_policy: Literal["none", "catch_up", "skip_missed"] = "none"
+
+    @field_validator("timezone")
     @classmethod
     def validate_timezone(cls, v: str) -> str:
         """Validate timezone is a valid IANA timezone"""
@@ -143,23 +144,25 @@ class ScheduleIn(BaseModel):
             ZoneInfo(v)
             return v
         except Exception:
-            raise ValueError(f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')")
+            raise ValueError(
+                f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')"
+            ) from None
 
 
 class ScheduleUpdate(BaseModel):
-    name: Optional[str] = None
-    cron_expr: Optional[str] = None
-    timezone: Optional[str] = None
-    enabled: Optional[bool] = None
-    max_concurrency: Optional[int] = None
-    backfill_policy: Optional[Literal['none','catch_up','skip_missed']] = None
-    last_run_at: Optional[str] = None
-    next_run_at: Optional[str] = None
+    name: str | None = None
+    cron_expr: str | None = None
+    timezone: str | None = None
+    enabled: bool | None = None
+    max_concurrency: int | None = None
+    backfill_policy: Literal["none", "catch_up", "skip_missed"] | None = None
+    last_run_at: str | None = None
+    next_run_at: str | None = None
     version: int
-    
-    @field_validator('timezone')
+
+    @field_validator("timezone")
     @classmethod
-    def validate_timezone(cls, v: Optional[str]) -> Optional[str]:
+    def validate_timezone(cls, v: str | None) -> str | None:
         """Validate timezone is a valid IANA timezone"""
         if v is None:
             return v
@@ -167,22 +170,24 @@ class ScheduleUpdate(BaseModel):
             ZoneInfo(v)
             return v
         except Exception:
-            raise ValueError(f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')")
+            raise ValueError(
+                f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')"
+            ) from None
 
 
 class BindingIn(BaseModel):
     schedule_id: int
-    entity_type: Literal['table', 'compare_query']
+    entity_type: Literal["table", "compare_query"]
     entity_id: int
 
 
 # ---------- Triggers ----------
 class TriggerIn(BaseModel):
-    source: Literal['manual', 'schedule', 'bulk_job', 'notebook'] = 'manual'
-    schedule_id: Optional[int] = None
-    entity_type: Literal['table', 'compare_query']
+    source: Literal["manual", "schedule", "bulk_job", "notebook"] = "manual"
+    schedule_id: int | None = None
+    entity_type: Literal["table", "compare_query"]
     entity_id: int
-    requested_by: Optional[str] = None
+    requested_by: str | None = None
     priority: int = 100
     params: dict = Field(default_factory=dict)
 
@@ -200,37 +205,37 @@ class BulkTriggerRequest(BaseModel):
 class SystemIn(BaseModel):
     name: str
     kind: str
-    catalog: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    database: Optional[str] = None
-    secret_scope: Optional[str] = 'livevalidator'
-    user_secret_key: Optional[str] = None
-    pass_secret_key: Optional[str] = None
-    jdbc_string: Optional[str] = None
-    driver_connector: Optional[str] = None
+    catalog: str | None = None
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    secret_scope: str | None = "livevalidator"
+    user_secret_key: str | None = None
+    pass_secret_key: str | None = None
+    jdbc_string: str | None = None
+    driver_connector: str | None = None
     concurrency: int = -1
-    max_rows: Optional[int] = None
+    max_rows: int | None = None
     options: dict = Field(default_factory=dict)
     is_active: bool = True
 
 
 class SystemUpdate(BaseModel):
-    name: Optional[str] = None
-    kind: Optional[str] = None
-    catalog: Optional[str] = None
-    host: Optional[str] = None
-    port: Optional[int] = None
-    database: Optional[str] = None
-    secret_scope: Optional[str] = None
-    user_secret_key: Optional[str] = None
-    pass_secret_key: Optional[str] = None
-    jdbc_string: Optional[str] = None
-    driver_connector: Optional[str] = None
-    concurrency: Optional[int] = None
-    max_rows: Optional[int] = None
-    options: Optional[dict] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    kind: str | None = None
+    catalog: str | None = None
+    host: str | None = None
+    port: int | None = None
+    database: str | None = None
+    secret_scope: str | None = None
+    user_secret_key: str | None = None
+    pass_secret_key: str | None = None
+    jdbc_string: str | None = None
+    driver_connector: str | None = None
+    concurrency: int | None = None
+    max_rows: int | None = None
+    options: dict | None = None
+    is_active: bool | None = None
     version: int
 
 
@@ -243,8 +248,8 @@ class TypeTransformationIn(BaseModel):
 
 
 class TypeTransformationUpdate(BaseModel):
-    system_a_function: Optional[str] = None
-    system_b_function: Optional[str] = None
+    system_a_function: str | None = None
+    system_b_function: str | None = None
     version: int
 
 
@@ -255,22 +260,22 @@ class ValidatePythonCode(BaseModel):
 # ---------- Dashboards ----------
 class DashboardIn(BaseModel):
     name: str
-    project: str = 'General'
+    project: str = "General"
 
-    @field_validator('name')
+    @field_validator("name")
     @classmethod
     def not_empty(cls, v: str) -> str:
         if not v or not v.strip():
-            raise ValueError('name cannot be empty')
+            raise ValueError("name cannot be empty")
         return v.strip()
 
 
 class DashboardUpdate(BaseModel):
-    name: Optional[str] = None
-    project: Optional[str] = None
-    time_range_preset: Optional[str] = None
-    time_range_from: Optional[str] = None
-    time_range_to: Optional[str] = None
+    name: str | None = None
+    project: str | None = None
+    time_range_preset: str | None = None
+    time_range_from: str | None = None
+    time_range_to: str | None = None
     version: int
 
 
@@ -279,18 +284,18 @@ class ChartIn(BaseModel):
     filters: dict = Field(default_factory=dict)
     sort_order: int = 0
 
-    @field_validator('name')
+    @field_validator("name")
     @classmethod
     def not_empty(cls, v: str) -> str:
         if not v or not v.strip():
-            raise ValueError('name cannot be empty')
+            raise ValueError("name cannot be empty")
         return v.strip()
 
 
 class ChartUpdate(BaseModel):
-    name: Optional[str] = None
-    filters: Optional[dict] = None
-    sort_order: Optional[int] = None
+    name: str | None = None
+    filters: dict | None = None
+    sort_order: int | None = None
 
 
 class ChartReorder(BaseModel):
