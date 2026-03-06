@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS control.datasets (
 
   compare_mode     TEXT NOT NULL DEFAULT 'except_all',   -- 'except_all' | 'primary_key' | 'hash'
   pk_columns       TEXT[] DEFAULT NULL,                  -- for primary_key mode
+  pk_vetted        BOOLEAN NOT NULL DEFAULT FALSE,       -- whether PK columns have been validated
   watermark_filter TEXT DEFAULT NULL,                    -- optional WHERE clause filter (e.g., "created_at > '2024-01-01'")
   include_columns  TEXT[] NOT NULL DEFAULT '{}',         -- default: compare all
   exclude_columns  TEXT[] NOT NULL DEFAULT '{}',
@@ -66,6 +67,7 @@ CREATE TABLE IF NOT EXISTS control.compare_queries (
 
   compare_mode     TEXT NOT NULL DEFAULT 'except_all',   -- same options as datasets
   pk_columns       TEXT[] DEFAULT NULL,
+  pk_vetted        BOOLEAN NOT NULL DEFAULT FALSE,       -- whether PK columns have been validated
   watermark_filter TEXT DEFAULT NULL,                    -- optional WHERE clause filter
   options          JSONB NOT NULL DEFAULT '{}'::jsonb,
   is_active        BOOLEAN NOT NULL DEFAULT TRUE,
@@ -390,3 +392,7 @@ SELECT 'compare_query', id, config_overrides, updated_by, updated_at
 FROM control.compare_queries 
 WHERE config_overrides IS NOT NULL AND config_overrides != '{}'::jsonb
 ON CONFLICT (scope, COALESCE(scope_id, -1)) DO NOTHING;
+
+-- 3) Add pk_vetted column to datasets and compare_queries
+ALTER TABLE control.datasets ADD COLUMN IF NOT EXISTS pk_vetted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE control.compare_queries ADD COLUMN IF NOT EXISTS pk_vetted BOOLEAN NOT NULL DEFAULT FALSE;
