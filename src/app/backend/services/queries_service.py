@@ -267,18 +267,13 @@ class QueriesService:
                         self.user_email,
                     )
 
-                    if item.get("schedule_name"):
-                        schedule = await self.db.fetchrow(
-                            "SELECT id FROM control.schedules WHERE name=$1", item["schedule_name"]
-                        )
+                    for sn in item.get("schedule_names") or ([item["schedule_name"]] if item.get("schedule_name") else []):
+                        schedule = await self.db.fetchrow("SELECT id FROM control.schedules WHERE name=$1", sn)
                         if schedule:
                             await self.db.execute(
-                                """
-                                INSERT INTO control.schedule_bindings (schedule_id, entity_type, entity_id)
-                                VALUES ($1, 'compare_query', $2) ON CONFLICT DO NOTHING
-                            """,
-                                schedule["id"],
-                                row["id"],
+                                """INSERT INTO control.schedule_bindings (schedule_id, entity_type, entity_id)
+                                VALUES ($1, 'compare_query', $2) ON CONFLICT DO NOTHING""",
+                                schedule["id"], row["id"],
                             )
 
                     if item.get("tags"):
