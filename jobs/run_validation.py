@@ -144,8 +144,11 @@ def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str]) -> DataF
 
 def validate_rows(src_df: DataFrame, tgt_df: DataFrame, mode: str) -> dict:
     """Row-level validation - returns diff count and samples"""
-    comparison_func: Callable = run_except_all if mode == "except_all" else lambda s, t: run_pk_compare(s, t, pk_columns)
-    
+
+    # ensure columns are ordered consistently for validation
+    tgt_df = tgt_df.select(src_df.columns)
+
+    comparison_func: Callable = run_except_all if mode == "except_all" else lambda s, t: run_pk_compare(s, t, pk_columns)    
     diff_df: DataFrame = comparison_func(src_df, tgt_df)
     diff_count: int = diff_df.count()
     
