@@ -245,21 +245,7 @@ try:
     tgt_df = exclude_cols(tgt_df, exclude_columns).persist(StorageLevel.MEMORY_AND_DISK)
 
     # Step 6: Row-level validation (only if counts match and not skipped)
-    if skip_row_validation:
-        print("Skipping row validation (skip_row_validation=true)")
-        if count_result["row_count_match"]:
-            result.update({
-                "rows_compared": count_result["row_count_source"],
-                "rows_matched": count_result["row_count_source"],
-                "rows_different": 0,
-                "src_df": src_df,
-                "tgt_df": tgt_df,
-                "sample_df": None,
-                "diff_df": None,
-            })
-        else:
-            result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None, "diff_df": None})
-    elif count_result["row_count_match"]:
+    if count_result["row_count_match"] and not skip_row_validation:
         # Validate PK columns exist and are unique for primary_key mode
         if compare_mode == "primary_key":
             pk_cols_lower: set[str] = set(c.lower() for c in pk_columns)
@@ -276,11 +262,10 @@ try:
         result.update(row_result)
         result["rows_matched"] = max(result["rows_compared"] - result["rows_different"], 0)
     else:
-        # if the row count match failed, we need to keep the dataframes for post analysis
         result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None, "diff_df": None})
 
     # Step 7: Determine final status
-    if result["rows_different"] == 0:
+    if result["rows_different"] == 0 or (skip_row_validation and result["row_count_match"]):
         print("[SUCCESS] Validation passed")
     else:
         rows_diff: int | None = result.get("rows_different")
