@@ -48,15 +48,15 @@ class EntityService:
         """Build INSERT SQL from model fields."""
         cols = self.columns + ["created_by", "updated_by"]
         n = len(self.columns)
-        placeholders = [f"${i+1}" for i in range(n)] + [f"${n+1}", f"${n+1}"]
+        placeholders = [f"${i + 1}" for i in range(n)] + [f"${n + 1}", f"${n + 1}"]
         return f"INSERT INTO {self.db_table} ({', '.join(cols)}) VALUES ({', '.join(placeholders)}) RETURNING *"
 
     def _build_update_sql(self) -> str:
         """Build UPDATE SQL from model fields with COALESCE for partial updates."""
-        sets = [f"{col}=COALESCE(${i+2},{col})" for i, col in enumerate(self.columns)]
+        sets = [f"{col}=COALESCE(${i + 2},{col})" for i, col in enumerate(self.columns)]
         n = len(self.columns)
-        sets += [f"updated_by=${n+2}", "updated_at=now()", "version=version+1"]
-        return f"UPDATE {self.db_table} SET {', '.join(sets)} WHERE id=$1 AND version=${n+3} RETURNING *"
+        sets += [f"updated_by=${n + 2}", "updated_at=now()", "version=version+1"]
+        return f"UPDATE {self.db_table} SET {', '.join(sets)} WHERE id=$1 AND version=${n + 3} RETURNING *"
 
     def _default_name(self, item: dict, idx: int) -> str:
         if self.entity_type == "table":
@@ -132,7 +132,9 @@ class EntityService:
         await self._require_system(data["src_system_id"], "Source")
         await self._require_system(data["tgt_system_id"], "Target")
         await self._require_name_unique(data["name"])
-        return await self.db.fetchrow(self._build_insert_sql(), *self._get_values(data, self.create_model), self.user_email)
+        return await self.db.fetchrow(
+            self._build_insert_sql(), *self._get_values(data, self.create_model), self.user_email
+        )
 
     async def update(self, entity_id: int, data: dict) -> dict:
         """Update entity with optimistic locking."""
@@ -144,7 +146,11 @@ class EntityService:
             await self._require_system(data["tgt_system_id"], "Target")
 
         row = await self.db.fetchrow(
-            self._build_update_sql(), entity_id, *self._get_values(data, self.update_model), self.user_email, data["version"]
+            self._build_update_sql(),
+            entity_id,
+            *self._get_values(data, self.update_model),
+            self.user_email,
+            data["version"],
         )
         if not row:
             current = await self.db.fetchrow(f"SELECT * FROM {self.db_table} WHERE id=$1", entity_id)
@@ -160,7 +166,8 @@ class EntityService:
         """Update lineage JSONB field."""
         await self.db.execute(
             f"UPDATE {self.db_table} SET lineage=$1::jsonb WHERE id=$2",
-            json.dumps(lineage) if lineage is not None else None, entity_id,
+            json.dumps(lineage) if lineage is not None else None,
+            entity_id,
         )
         return {"ok": True}
 
@@ -169,8 +176,16 @@ class EntityService:
     # ─────────────────────────────────────────────────────────────────────────
 
     async def _resolve_system_ids(self, item: dict, default_src: int, default_tgt: int) -> tuple[int, int]:
-        src_id = await self._get_system_id_by_name(item["src_system_name"], "Source") if item.get("src_system_name") else default_src
-        tgt_id = await self._get_system_id_by_name(item["tgt_system_name"], "Target") if item.get("tgt_system_name") else default_tgt
+        src_id = (
+            await self._get_system_id_by_name(item["src_system_name"], "Source")
+            if item.get("src_system_name")
+            else default_src
+        )
+        tgt_id = (
+            await self._get_system_id_by_name(item["tgt_system_name"], "Target")
+            if item.get("tgt_system_name")
+            else default_tgt
+        )
         return src_id, tgt_id
 
     def _parse_schedule_names(self, item: dict) -> list[str]:
@@ -183,7 +198,8 @@ class EntityService:
         if clear:
             await self.db.execute(
                 "DELETE FROM control.schedule_bindings WHERE entity_type=$1 AND entity_id=$2",
-                self.binding_type, entity_id,
+                self.binding_type,
+                entity_id,
             )
         for name in sched_names:
             sched = await self.db.fetchrow("SELECT id FROM control.schedules WHERE name=$1", name)
@@ -191,7 +207,9 @@ class EntityService:
                 await self.db.execute(
                     """INSERT INTO control.schedule_bindings (schedule_id, entity_type, entity_id)
                     VALUES ($1, $2, $3) ON CONFLICT DO NOTHING""",
-                    sched["id"], self.binding_type, entity_id,
+                    sched["id"],
+                    self.binding_type,
+                    entity_id,
                 )
 
     async def _bind_tags(self, entity_id: int, tags: list[str]) -> None:
@@ -205,7 +223,9 @@ class EntityService:
             await self.db.execute(
                 """INSERT INTO control.entity_tags (entity_type, entity_id, tag_id)
                 VALUES ($1, $2, $3) ON CONFLICT DO NOTHING""",
-                self.label, entity_id, tag["id"],
+                self.label,
+                entity_id,
+                tag["id"],
             )
 
     async def _bulk_insert(self, item: dict, name: str, src_id: int, tgt_id: int) -> dict:
@@ -217,7 +237,7 @@ class EntityService:
         cols = [c for c in self.columns if c != "options"] + ["created_by", "updated_by"]
         vals = [self._get_value(data, c, self.create_model) for c in self.columns if c != "options"] + [self.user_email]
         n = len(vals)
-        placeholders = [f"${i+1}" for i in range(n)] + [f"${n}"]
+        placeholders = [f"${i + 1}" for i in range(n)] + [f"${n}"]
         sql = f"INSERT INTO {self.db_table} ({', '.join(cols)}) VALUES ({', '.join(placeholders)}) RETURNING *"
         return await self.db.fetchrow(sql, *vals)
 
@@ -230,7 +250,7 @@ class EntityService:
         skip = {"name", "options"}
         sets, vals = [], [entity_id]
         for i, col in enumerate(c for c in self.columns if c not in skip):
-            sets.append(f"{col}=${i+2}")
+            sets.append(f"{col}=${i + 2}")
             vals.append(self._get_value(data, col, self.update_model))
         idx = len(vals) + 1
         sets += [f"updated_by=${idx}", "updated_at=now()", "version=version+1"]
