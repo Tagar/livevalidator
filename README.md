@@ -1,14 +1,5 @@
 # <img src="src/app/frontend/favicon.ico" alt="LiveValidator" width="32" height="32" style="vertical-align: middle;"/> LiveValidator
 
-![CI](https://github.com/databricks-field-eng/livevalidator/actions/workflows/ci.yml/badge.svg)
-<!-- Coverage badge - To set up:
-1. Create a GitHub Gist (private or public)
-2. Create a Personal Access Token with 'gist' scope
-3. Add GIST_TOKEN and COVERAGE_GIST_ID as repo secrets
-4. Update the URL below with your username and gist ID
--->
-![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_GIST_ID/raw/coverage-badge.json)
-
 ## Table of Contents
 
 - [Overview](#overview)
