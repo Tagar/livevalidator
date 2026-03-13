@@ -578,6 +578,7 @@ class TriggersService:
         result = dict(entity)
         result["id"] = row["id"]
         result["entity_type"] = row["entity_type"]
+        result["entity_id"] = row["entity_id"]
         if row["entity_type"] == "table":
             result["source_table"] = f"{entity['src_schema'].strip()}.{entity['src_table'].strip()}"
             result["target_table"] = f"{entity['tgt_schema'].strip()}.{entity['tgt_table'].strip()}"

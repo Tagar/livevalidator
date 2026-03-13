@@ -182,15 +182,13 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             client.api_call("PUT", f"/api/triggers/{trigger['id']}/release", {})
             return False
 
-        # Fetch global validation config, then apply entity-specific overrides
-        resolved_config = client.api_call("GET", "/api/validation-config")
-        if trigger.get("config_overrides"):
-            resolved_config.update(trigger.get("config_overrides"))
+        entity_type = "table" if trigger["entity_type"] == "table" else "compare_query"
+        config = client.api_call(
+            "GET", f"/api/validation-config/effective?entity_type={entity_type}&entity_id={trigger['entity_id']}"
+        )
 
-        # Build job parameters
-        is_table: bool = trigger["entity_type"] == "table"
-        params: dict = {
-            "backend_api_url": str(backend_api_url),
+        is_table = trigger["entity_type"] == "table"
+        params = {
             "trigger_id": str(trigger["id"]),
             "name": trigger["name"],
             "source_system_name": str(trigger["src_system_name"]),
@@ -205,9 +203,7 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             "include_columns": json.dumps(trigger.get("include_columns") or []),
             "exclude_columns": json.dumps(trigger.get("exclude_columns") or []),
             "options": json.dumps(trigger.get("options") or {}),
-            "downgrade_unicode": str(resolved_config.get("downgrade_unicode", False)).lower(),
-            "replace_special_char": json.dumps(resolved_config.get("replace_special_char", [])),
-            "extra_replace_regex": resolved_config.get("extra_replace_regex", "")
+            "config": json.dumps(config),
         }
 
         # Launch validation job
