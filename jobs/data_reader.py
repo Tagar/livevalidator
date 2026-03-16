@@ -150,15 +150,16 @@ def read_data(
     spark: SparkSession = SparkSession.getActiveSession()
     is_databricks: bool = conn["system"]["kind"] == "Databricks"
 
+    df: DataFrame
     if query:
         if watermark_expr:
             print(f"Ignoring watermark expression for 'query' entity: {watermark_expr}")
         if is_databricks:
             if conn["type"] == "catalog":
                 spark.sql(f"USE CATALOG `{conn['catalog']}`;")
-            return spark.sql(query)
-        else:
-            return query_jdbc(conn, query)
+
+        df = spark.sql(query) if is_databricks else query_jdbc(conn, query)
+        return df.toDF(*[c.lower() for c in df.columns])
     
     # Table mode - may need type mapping
     if is_databricks:
@@ -171,9 +172,5 @@ def read_data(
     read_query: str = generate_read_query(conn, table, type_mapping_func) if type_mapping_func and type_mapping_func.strip() else f"SELECT * FROM {table}"
     read_query += watermark_clause
 
-    if conn["type"] == "jdbc":
-        return query_jdbc(conn, read_query)
-
-    df: DataFrame = spark.sql(read_query)
-    
+    df = spark.sql(read_query) if is_databricks else query_jdbc(conn, read_query)
     return df.toDF(*[c.lower() for c in df.columns])
