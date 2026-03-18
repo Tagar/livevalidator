@@ -165,8 +165,11 @@ def read_data(
     if is_databricks:
         table = f"`{conn['catalog']}`.{table}"
         # invalidate the disk cache, may fix some of the caching issues we see
-        spark.sql(f"REFRESH TABLE {table}")
-        spark.sql(f"UNCACHE TABLE {table}")
+        try:
+            spark.sql(f"REFRESH TABLE {table}")
+            spark.sql(f"UNCACHE TABLE {table}")
+        except Exception as e:
+            print(f"Issue with REFRESH or UNCACHE: {e}")
 
     watermark_clause: str = f" WHERE {watermark_expr}" if watermark_expr else ""
     read_query: str = generate_read_query(conn, table, type_mapping_func) if type_mapping_func and type_mapping_func.strip() else f"SELECT * FROM {table}"
