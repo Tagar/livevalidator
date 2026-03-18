@@ -177,14 +177,13 @@ def run_pk_analysis(result: dict) -> dict | None:
 
     mismatch_samples = compare_pk_samples(src_rows, tgt_rows, pk_columns, source_system_name, target_system_name)
     
-    if mismatch_samples is None:
+    if not mismatch_samples:
         print("Found inconsistencies when matching primary keys. One or more PKs may be invalid.")
         return None
 
-    if mismatch_samples:
-        mismatch_df: DataFrame = spark.createDataFrame(mismatch_samples)
-        mismatch_df.display()
     print(mismatch_samples)
+    mismatch_df: DataFrame = spark.createDataFrame(mismatch_samples)
+    mismatch_df.display()
 
     src_df.unpersist(), tgt_df.unpersist()
 
