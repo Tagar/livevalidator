@@ -42,27 +42,29 @@ class TriggersService:
         return trigger
 
     async def _get_running_counts(self, system_ids: list[int] | None = None) -> dict[int, int]:
-        """Get count of running validations per system."""
+        """Get count of running validations per system (only actually launched jobs)."""
         query = """
             WITH running_tables AS (
-                SELECT d.src_system_id, d.tgt_system_id
+                SELECT t.id as trigger_id, d.src_system_id, d.tgt_system_id
                 FROM control.triggers t
                 JOIN control.datasets d ON t.entity_id = d.id
                 WHERE t.status = 'running' AND t.entity_type = 'table'
+                  AND t.databricks_run_id IS NOT NULL
             ),
             running_queries AS (
-                SELECT q.src_system_id, q.tgt_system_id
+                SELECT t.id as trigger_id, q.src_system_id, q.tgt_system_id
                 FROM control.triggers t
                 JOIN control.compare_queries q ON t.entity_id = q.id
                 WHERE t.status = 'running' AND t.entity_type = 'compare_query'
+                  AND t.databricks_run_id IS NOT NULL
             ),
             all_running AS (
-                SELECT src_system_id as system_id FROM running_tables
-                UNION ALL SELECT tgt_system_id FROM running_tables
-                UNION ALL SELECT src_system_id FROM running_queries
-                UNION ALL SELECT tgt_system_id FROM running_queries
+                SELECT trigger_id, src_system_id as system_id FROM running_tables
+                UNION ALL SELECT trigger_id, tgt_system_id FROM running_tables
+                UNION ALL SELECT trigger_id, src_system_id FROM running_queries
+                UNION ALL SELECT trigger_id, tgt_system_id FROM running_queries
             )
-            SELECT system_id, COUNT(*) as count FROM all_running
+            SELECT system_id, COUNT(DISTINCT trigger_id) as count FROM all_running
         """
         if system_ids:
             query += " WHERE system_id = ANY($1)"
@@ -345,7 +347,7 @@ class TriggersService:
         return {"created": [serialize_row(r) for r in rows]}
 
     async def bulk_create_triggers(self, entity_type: str, entity_ids: list[int]) -> dict:
-        """Bulk create triggers with status 'running'."""
+        """Bulk create triggers with status 'queued' for sequential launch."""
         if not entity_ids:
             return {"created": [], "skipped": 0}
 
@@ -355,7 +357,7 @@ class TriggersService:
                 source, entity_type, entity_id, status,
                 priority, requested_by, requested_at
             )
-            SELECT 'manual', $1, t.entity_id, 'running', 100, $2, now()
+            SELECT 'manual', $1, t.entity_id, 'queued', 100, $2, now()
             FROM unnest($3::bigint[]) AS t(entity_id)
             LEFT JOIN control.datasets d ON $1 = 'table' AND d.id = t.entity_id AND d.is_active = TRUE
             LEFT JOIN control.compare_queries q ON $1 = 'compare_query' AND q.id = t.entity_id AND q.is_active = TRUE
@@ -404,7 +406,7 @@ class TriggersService:
 
         can_launch, reason = await self.check_system_concurrency(entity["src_system_id"], entity["tgt_system_id"])
         if not can_launch:
-            return {"launched": False, "reason": reason}
+            return {"launched": False, "reason": reason, "queued": True}
 
         try:
             run_info = await self.launch_validation_job(trigger_id)

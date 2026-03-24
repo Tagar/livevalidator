@@ -220,12 +220,9 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             "run_url": str(run_url)
         })
 
-        # increment running countz for source and target systems
-        for system_id in [trigger["src_system_id"], trigger["tgt_system_id"]]:
-            if running_per_system.get(system_id):
-                running_per_system[system_id] += 1
-            else:
-                running_per_system[system_id] = 1
+        # increment running counts (use set to avoid double-counting if src==tgt)
+        for system_id in {trigger["src_system_id"], trigger["tgt_system_id"]}:
+            running_per_system[str(system_id)] = running_per_system.get(str(system_id), 0) + 1
 
         return True
 

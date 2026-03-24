@@ -385,7 +385,7 @@ export default function App() {
       for (const triggerId of triggerIds) {
         try {
           await apiCall("POST", `/api/triggers/${triggerId}/launch`);
-        } catch { /* silent */ }
+        } catch { /* silent - trigger stays queued for JobSentinel */ }
       }
       triggers.refresh();
     } catch (err) {
