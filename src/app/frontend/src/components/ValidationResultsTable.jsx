@@ -41,6 +41,14 @@ function ErrorPopover({ error, onClose }) {
   );
 }
 
+// Format row count difference as percentage (positive = target higher, negative = target lower)
+const formatRowCountDiff = (source, target) => {
+  if (!source || source === 0) return null;
+  const pct = ((target - source) / source) * 100;
+  const sign = pct >= 0 ? '+' : '';
+  return `${sign}${pct.toFixed(1)}%`;
+};
+
 // Copy icon SVG component
 const CopyIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="none" viewBox="0 0 16 16" aria-hidden="true">
@@ -268,6 +276,11 @@ export function ValidationResultsTable({
                       title="Click to view row count analysis"
                     >
                       {v.row_count_source?.toLocaleString()} ≠ {v.row_count_target?.toLocaleString()}
+                      {formatRowCountDiff(v.row_count_source, v.row_count_target) && (
+                        <span className="ml-1">
+                          ({formatRowCountDiff(v.row_count_source, v.row_count_target)})
+                        </span>
+                      )}
                     </button>
                   )}
                 </td>
