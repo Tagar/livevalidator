@@ -112,7 +112,7 @@ def validate_counts(
     print(f"\tRow counts {'match' if match else 'do not match'}: source={src_count}, target={tgt_count}")
     
     return {
-        "rows_compared": src_count if match else 0,
+        "rows_compared": src_count, # if match else 0,
         "row_count_source": src_count,
         "row_count_target": tgt_count,
         "row_count_match": match
@@ -129,7 +129,7 @@ def run_except_all(src_df: DataFrame, tgt_df: DataFrame) -> DataFrame:
     """Find rows in source not in target using EXCEPT ALL"""
     return src_df.exceptAll(tgt_df)
 
-def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str]) -> DataFrame:
+def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str], how: str) -> DataFrame:
     """Find rows with PK matches but different values using hash comparison"""
     def rowhash_exact(df: DataFrame) -> DataFrame:
         cols: list = [col(c) for c in df.columns]
@@ -138,7 +138,7 @@ def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str]) -> DataF
     src_hash: DataFrame = rowhash_exact(src_df)
     tgt_hash: DataFrame = rowhash_exact(tgt_df)
 
-    joined: DataFrame = null_safe_join(src_hash, tgt_hash, pk, how="leftouter").select(
+    joined: DataFrame = null_safe_join(src_hash, tgt_hash, pk, how).select(
         *pk,
         src_hash["__hash__"].alias("h_lhs"),
         tgt_hash["__hash__"].alias("h_rhs")
@@ -148,13 +148,13 @@ def run_pk_compare(src_df: DataFrame, tgt_df: DataFrame, pk: list[str]) -> DataF
         (col("h_lhs") != col("h_rhs")) | col("h_lhs").isNull() | col("h_rhs").isNull()
     ).drop("h_lhs", "h_rhs", "__hash__")
 
-def validate_rows(src_df: DataFrame, tgt_df: DataFrame, mode: str) -> dict:
+def validate_rows(src_df: DataFrame, tgt_df: DataFrame, mode: str, row_count_match: bool) -> dict:
     """Row-level validation - returns diff count and samples"""
 
     # ensure columns are ordered consistently for validation
     tgt_df = tgt_df.select(src_df.columns)
-
-    comparison_func: Callable = run_except_all if mode == "except_all" else lambda s, t: run_pk_compare(s, t, pk_columns)    
+    how: str = "leftouter" if row_count_match else "inner"
+    comparison_func: Callable = run_except_all if mode == "except_all" else lambda s, t: run_pk_compare(s, t, pk_columns, how)    
     diff_df: DataFrame = comparison_func(src_df, tgt_df)
     diff_count: int = diff_df.count()
     
@@ -254,9 +254,10 @@ try:
     tgt_df = exclude_cols(tgt_df, exclude_columns).persist(StorageLevel.MEMORY_AND_DISK)
 
     # Step 6: Row-level validation (only if counts match and not skipped)
-    if count_result["row_count_match"] and not skip_row_validation:
+    if (count_result["row_count_match"] or compare_mode == "primary_key") and not skip_row_validation:
         # Validate PK columns exist and are unique for primary_key mode
         if compare_mode == "primary_key":
+            print(f"Vetting the primary key...")
             if not set(pk_columns).issubset(set(src_df.columns)):
                 raise ValueError(f"PK columns {pk_columns} not found in source columns {list(src_df.columns)}")
 
@@ -265,7 +266,7 @@ try:
                 raise ValueError(f"PK not unique: {duplicate_pk[0].asDict()}")
         
         print(f"Validating rows using {compare_mode}...")
-        row_result: dict = validate_rows(src_df, tgt_df, compare_mode)
+        row_result: dict = validate_rows(src_df, tgt_df, compare_mode, count_result["row_count_match"])
         result.update(row_result)
         result["rows_matched"] = max(result["rows_compared"] - result["rows_different"], 0)
     else:
@@ -348,16 +349,8 @@ if compare_mode == "except_all" and history_id:
 # MAGIC ## PK Post Analysis
 
 # COMMAND ----------
-if not result["row_count_match"]:
-    pk_count_analysis = run_pk_count_analysis(result)
-    if pk_count_analysis and history_id:
-        client.api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": pk_count_analysis})
-        if not pk_count_analysis.get("skipped"):
-            print(f"Updated validation history {history_id} with PK count analysis")
-    dbutils.notebook.exit("Validation failed - Row count mismatch")
-
-# COMMAND ----------
-# Display mismatch samples
+# Display sample PKs that mismatched
+sample_df = sample_df.persist()
 sample_df.display()
 
 # COMMAND ----------
@@ -366,3 +359,13 @@ pk_sample_differences: dict | None = run_pk_analysis(result)
 if pk_sample_differences:
     client.api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": pk_sample_differences})
     print(f"Updated validation history {history_id} with PK analysis ({len(pk_sample_differences['samples'])} samples)")
+    dbutils.notebook.exit("Validation failed on primary key")
+
+# COMMAND ----------
+# No diffs found, proceeding with row count mismatch analysis
+if not result["row_count_match"]:
+    pk_count_analysis = run_pk_count_analysis(result)
+    if pk_count_analysis and history_id:
+        client.api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": pk_count_analysis})
+        if not pk_count_analysis.get("skipped"):
+            print(f"Updated validation history {history_id} with PK count analysis")
