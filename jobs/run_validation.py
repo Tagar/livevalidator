@@ -273,7 +273,7 @@ try:
         result.update({"rows_compared": None, "rows_matched": None, "rows_different": None, "src_df": src_df, "tgt_df": tgt_df, "sample_df": None, "diff_df": None})
 
     # Step 7: Determine final status
-    if result["rows_different"] == 0 or (skip_row_validation and result["row_count_match"]):
+    if (result["rows_different"] == 0 and result["row_count_match"]) or (skip_row_validation and result["row_count_match"]):
         print("[SUCCESS] Validation passed")
     else:
         rows_diff: int | None = result.get("rows_different")
@@ -359,7 +359,10 @@ pk_sample_differences: dict | None = run_pk_analysis(result)
 if pk_sample_differences:
     client.api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": pk_sample_differences})
     print(f"Updated validation history {history_id} with PK analysis ({len(pk_sample_differences['samples'])} samples)")
-    dbutils.notebook.exit("Validation failed on primary key")
+
+# COMMAND ----------
+if pk_sample_differences:
+    dbutils.notebook.exit("Validation failed, pk analysis completed.")
 
 # COMMAND ----------
 # No diffs found, proceeding with row count mismatch analysis

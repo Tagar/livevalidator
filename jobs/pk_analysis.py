@@ -183,8 +183,11 @@ def run_pk_analysis(result: dict) -> dict | None:
         return None
 
     print(mismatch_samples)
-    mismatch_df: DataFrame = spark.createDataFrame(mismatch_samples)
-    mismatch_df.display()
+    try:
+        mismatch_df: DataFrame = spark.createDataFrame(mismatch_samples)
+        mismatch_df.display()
+    except Exception as e:
+        print("Skipping pretty display of mismatch samples do type inference issues.")
 
     src_df.unpersist(), tgt_df.unpersist()
 
