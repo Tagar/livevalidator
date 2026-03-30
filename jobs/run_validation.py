@@ -183,7 +183,7 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, mode: str, row_count_mat
             return {"rows_different": 0, "sample_differences": []}
     
     print(f"Found {diff_count} differences, extracting sample")
-    sample_df: DataFrame = diff_df.limit(max_sample_rows)
+    sample_df: DataFrame = diff_df.limit(max_sample_rows).persist()
     
     sample_dicts: list[dict] = [row.asDict() for row in sample_df.collect()]
     
@@ -370,8 +370,8 @@ if compare_mode == "except_all" and history_id:
 
 # COMMAND ----------
 # Display sample PKs that mismatched
-sample_df = sample_df.persist()
-sample_df.display()
+if not result["rows_success"]:
+    result["sample_df"].display()
 
 # COMMAND ----------
 # Update validation history with PK analysis
