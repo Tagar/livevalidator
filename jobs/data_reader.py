@@ -49,23 +49,49 @@ def get_type_transformations(source_system_id: int, target_system_id: int, backe
     data: dict = backend_client.api_call("GET", f"/api/type-transformations/for-validation/{source_system_id}/{target_system_id}")
     return data.get('system_a_function', ''), data.get('system_b_function', '')
 
-def query_jdbc(conn_info: dict, query: str) -> DataFrame:
-    """Execute a JDBC query and return DataFrame"""
+def query_jdbc(
+    conn_info: dict, query: str, partition_info: dict | None = None
+) -> DataFrame:
+    """Execute a JDBC query and return DataFrame.
+
+    When *partition_info* is provided, switches from single-connection
+    ``.option("query", ...)`` to parallel ``.option("dbtable", ...)`` with
+    Spark JDBC partitioning.
+    """
     spark: SparkSession = SparkSession.getActiveSession()
     driver: str | None = conn_info["system"].get("driver_connector")
     if not driver:
         raise ValueError(f"JDBC driver not set for system: {conn_info['system']['name']}")
-    
-    reader = spark.read.format("jdbc") \
-        .option("url", conn_info["jdbc_string"]).option("driver", driver).option("query", query) \
-        .option("user", conn_info.get("username")).option("password", conn_info.get("password"))
-    
+
+    if partition_info:
+        reader = (
+            spark.read.format("jdbc")
+            .option("url", conn_info["jdbc_string"])
+            .option("driver", driver)
+            .option("dbtable", f"({query}) AS _t")
+            .option("partitionColumn", partition_info["column"])
+            .option("lowerBound", str(partition_info["lower"]))
+            .option("upperBound", str(partition_info["upper"]))
+            .option("numPartitions", str(partition_info["num_partitions"]))
+            .option("user", conn_info.get("username"))
+            .option("password", conn_info.get("password"))
+        )
+    else:
+        reader = (
+            spark.read.format("jdbc")
+            .option("url", conn_info["jdbc_string"])
+            .option("driver", driver)
+            .option("query", query)
+            .option("user", conn_info.get("username"))
+            .option("password", conn_info.get("password"))
+        )
+
     options = conn_info["system"].get("options") or {}
     if isinstance(options, str):
         options = json.loads(options)
     for key, val in options.get("jdbc", {}).items():
         reader = reader.option(key, val)
-    
+
     return reader.load()
 
 def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
@@ -180,5 +206,37 @@ def read_data(
     read_query: str = generate_read_query(conn, table, type_mapping_func) if type_mapping_func and type_mapping_func.strip() else f"SELECT * FROM {table}"
     read_query += watermark_clause
 
-    df = spark.sql(read_query) if is_databricks else query_jdbc(conn, read_query)
+    if conn["type"] == "jdbc":
+        partition_info = None
+        if conn["system"]["kind"] == "SQLServer":
+            from sql_server_columns import detect_partition_info
+            partition_info = detect_partition_info(table, lambda q: query_jdbc(conn, q))
+
+        if partition_info:
+            try:
+                parallel_query: str = read_query
+                drop_col: str | None = None
+                if type_mapping_func and type_mapping_func.strip():
+                    pk_col: str = partition_info["column"]
+                    quoted_pk: str = f"[{pk_col}]"
+                    from_pos: int = parallel_query.upper().index(" FROM ")
+                    parallel_query = (
+                        parallel_query[:from_pos]
+                        + f", {quoted_pk} AS __lv_pk__"
+                        + parallel_query[from_pos:]
+                    )
+                    partition_info = {**partition_info, "column": "__lv_pk__"}
+                    drop_col = "__lv_pk__"
+                print(f"[Auto-Partition] Parallel JDBC read: {partition_info['num_partitions']} partitions")
+                df = query_jdbc(conn, parallel_query, partition_info=partition_info)
+                if drop_col:
+                    df = df.drop(drop_col)
+                return df.toDF(*[c.lower() for c in df.columns])
+            except Exception as e:
+                print(f"[WARN] Parallel read failed ({e}), falling back to single connection")
+
+        df = query_jdbc(conn, read_query)
+        return df.toDF(*[c.lower() for c in df.columns])
+
+    df = spark.sql(read_query)
     return df.toDF(*[c.lower() for c in df.columns])
