@@ -15,7 +15,7 @@ def sqlserver_partition_info(
 ) -> PartitionInfo | None:
     """Auto-detect a partition column from SQL Server's clustered index or PK.
 
-    Returns a dict with partition metadata, or None if no suitable column is
+    Returns a PartitionInfo object or None if no suitable column is
     found (caller falls back to single-connection read).
     """
     tbl_parts = table.split(".")
