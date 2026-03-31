@@ -1,17 +1,18 @@
+import os
+import sys
 from collections.abc import Callable
 
 from pyspark.sql import DataFrame
 
-QueryFn = Callable[[str], DataFrame]
+_jobs_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.path.abspath(".")
+sys.path.insert(0, _jobs_dir)
+
+from models import PartitionInfo
 
 
-def _quote_column(col: str) -> str:
-    return f"[{col.replace(']', ']]')}]"
-
-
-def detect_partition_info(
-    table: str, query_fn: QueryFn
-) -> dict | None:
+def sqlserver_partition_info(
+    conn: dict, table: str, query_fn: Callable[[dict, str], DataFrame]
+) -> PartitionInfo | None:
     """Auto-detect a partition column from SQL Server's clustered index or PK.
 
     Returns a dict with partition metadata, or None if no suitable column is
@@ -41,17 +42,15 @@ def detect_partition_info(
         ORDER BY i.is_primary_key DESC, i.type ASC
         """
 
-        rows = query_fn(meta_query).collect()
+        rows = query_fn(conn, meta_query).collect()
         if not rows:
             print("[Auto-Partition] No integer PK/clustered index found, reverting to single-connection read")
             return None
 
         partition_col = rows[0]["col_name"]
-        quoted = _quote_column(partition_col)
+        quoted = f"[{partition_col.replace(']', ']]')}]"
 
-        bounds = query_fn(
-            f"SELECT MIN({quoted}) AS lo, MAX({quoted}) AS hi FROM [{schema}].[{tbl}]"
-        ).collect()[0]
+        bounds = query_fn(conn, f"SELECT MIN({quoted}) AS lo, MAX({quoted}) AS hi FROM [{schema}].[{tbl}]").collect()[0]
 
         if bounds["lo"] is None or bounds["hi"] is None:
             print("[Auto-Partition] No integer PK/clustered index found, reverting to single-connection read")
@@ -63,9 +62,11 @@ def detect_partition_info(
             return None
 
         num_partitions = min(12, max(4, (upper - lower) // 1_000_000))
-        print(f"[Auto-Partition] Detected column: [{partition_col}] (range: {lower:,} to {upper:,}, {num_partitions} partitions)")
+        print(
+            f"[Auto-Partition] Detected column: [{partition_col}] (range: {lower:,} to {upper:,}, {num_partitions} partitions)"
+        )
 
-        return {"column": partition_col, "lower": lower, "upper": upper, "num_partitions": num_partitions}
+        return PartitionInfo(partition_col, lower, upper, num_partitions)
     except Exception as e:
         print(f"[WARN] Partition detection failed: {e}, reverting to single-connection read")
         return None

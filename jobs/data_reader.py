@@ -1,25 +1,28 @@
+import json
+import os
+import sys
 from collections.abc import Callable
 from typing import Any
-from pyspark.sql import DataFrame, SparkSession
-from databricks.sdk.runtime import dbutils
 
-import json
-import sys
-import os
-_jobs_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.path.abspath('.')
+from databricks.sdk.runtime import dbutils
+from pyspark.sql import DataFrame, SparkSession
+
+_jobs_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.path.abspath(".")
 sys.path.insert(0, _jobs_dir)
 
 from backend_api_client import BackendAPIClient
+from models import PartitionInfo
+from sql_server_columns import sqlserver_partition_info
 from teradata_columns import teradata_columns
 
 
 def get_connection_info(system_name: str, backend_client: BackendAPIClient) -> dict:
     """Fetch system and prepare connection info"""
     system: dict = backend_client.api_call("GET", f"/api/systems/name/{system_name}")
-    
+
     if system["kind"] == "Databricks":
         return {"type": "catalog", "catalog": system.get("catalog"), "system": system}
-    
+
     jdbc_str: str
     if system["jdbc_string"]:
         jdbc_str = system["jdbc_string"]
@@ -41,17 +44,21 @@ def get_connection_info(system_name: str, backend_client: BackendAPIClient) -> d
         "jdbc_string": jdbc_str,
         "username": dbutils.secrets.get(scope, system["user_secret_key"]) if system.get("user_secret_key") else None,
         "password": dbutils.secrets.get(scope, system["pass_secret_key"]) if system.get("pass_secret_key") else None,
-        "system": system
+        "system": system,
     }
 
-def get_type_transformations(source_system_id: int, target_system_id: int, backend_client: BackendAPIClient) -> tuple[str, str]:
-    """Fetch type transformation functions for a system pair. Empty strings mean no transformation."""
-    data: dict = backend_client.api_call("GET", f"/api/type-transformations/for-validation/{source_system_id}/{target_system_id}")
-    return data.get('system_a_function', ''), data.get('system_b_function', '')
 
-def query_jdbc(
-    conn_info: dict, query: str, partition_info: dict | None = None
-) -> DataFrame:
+def get_type_transformations(
+    source_system_id: int, target_system_id: int, backend_client: BackendAPIClient
+) -> tuple[str, str]:
+    """Fetch type transformation functions for a system pair. Empty strings mean no transformation."""
+    data: dict = backend_client.api_call(
+        "GET", f"/api/type-transformations/for-validation/{source_system_id}/{target_system_id}"
+    )
+    return data.get("system_a_function", ""), data.get("system_b_function", "")
+
+
+def query_jdbc(conn_info: dict, query: str, partition_info: PartitionInfo | None = None) -> DataFrame:
     """Execute a JDBC query and return DataFrame.
 
     When *partition_info* is provided, switches from single-connection
@@ -63,28 +70,24 @@ def query_jdbc(
     if not driver:
         raise ValueError(f"JDBC driver not set for system: {conn_info['system']['name']}")
 
+    reader = (
+        spark.read.format("jdbc")
+        .option("url", conn_info["jdbc_string"])
+        .option("driver", driver)
+        .option("user", conn_info.get("username"))
+        .option("password", conn_info.get("password"))
+    )
+
     if partition_info:
         reader = (
-            spark.read.format("jdbc")
-            .option("url", conn_info["jdbc_string"])
-            .option("driver", driver)
-            .option("dbtable", f"({query}) AS _t")
-            .option("partitionColumn", partition_info["column"])
-            .option("lowerBound", str(partition_info["lower"]))
-            .option("upperBound", str(partition_info["upper"]))
-            .option("numPartitions", str(partition_info["num_partitions"]))
-            .option("user", conn_info.get("username"))
-            .option("password", conn_info.get("password"))
+            reader.option("dbtable", f"({query}) AS _t")
+            .option("partitionColumn", partition_info.column)
+            .option("lowerBound", partition_info.lower)
+            .option("upperBound", partition_info.upper)
+            .option("numPartitions", partition_info.num_partitions)
         )
     else:
-        reader = (
-            spark.read.format("jdbc")
-            .option("url", conn_info["jdbc_string"])
-            .option("driver", driver)
-            .option("query", query)
-            .option("user", conn_info.get("username"))
-            .option("password", conn_info.get("password"))
-        )
+        reader = reader.option("query", query)
 
     options = conn_info["system"].get("options") or {}
     if isinstance(options, str):
@@ -93,6 +96,7 @@ def query_jdbc(
         reader = reader.option(key, val)
 
     return reader.load()
+
 
 def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
     """Get column names and types for a table"""
@@ -107,7 +111,7 @@ def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
     elif len(tbl_parts) == 3:
         catalog, schema, tbl = tbl_parts
     else:
-        raise ValueError(f"Table must have format 'catalog.schema.table' or 'schema.table' for type mapping.")
+        raise ValueError("Table must have format 'catalog.schema.table' or 'schema.table' for type mapping.")
 
     query_columns: str
     match conn["system"]["kind"]:
@@ -115,7 +119,7 @@ def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
             table_schema = spark.read.table(f"{catalog}.{schema}.{tbl}").schema
             return [(col.name, str(col.dataType)) for col in table_schema.fields]
         case "Teradata":
-            return teradata_columns(conn['system']['host'], conn['username'], conn['password'], schema=schema, tbl=tbl)
+            return teradata_columns(conn["system"]["host"], conn["username"], conn["password"], schema=schema, tbl=tbl)
         case "Oracle":
             query_columns = f"""
             SELECT column_name, data_type FROM all_tab_columns
@@ -134,22 +138,23 @@ def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
     column_df: DataFrame = query_jdbc(conn, query_columns)
     return [(row[0], row[1]) for row in column_df.collect()]
 
+
 def generate_read_query(conn: dict, table: str, type_mapping_func: str) -> str:
     """Generate the query to read data with type transformations applied"""
     print(f"Mapping types for system: '{conn['system']['name']}' with type mapping function: \n{type_mapping_func}")
     namespace: dict[str, Any] = {}
     exec(type_mapping_func, namespace)
-    transform_columns: Callable[[str, str], str] = namespace['transform_columns']
+    transform_columns: Callable[[str, str], str] = namespace["transform_columns"]
 
     col_types: list[tuple[str, str]] = get_column_types(conn, table)
-    cast_columns: list[str] = [transform_columns(name, data_type) for name, data_type in col_types] if col_types else ["*"]
+    cast_columns: list[str] = (
+        [transform_columns(name, data_type) for name, data_type in col_types] if col_types else ["*"]
+    )
     return f"SELECT {', '.join(cast_columns)} FROM {table}"
 
+
 def read_count(
-    conn: dict,
-    table: str | None = None,
-    query: str | None = None,
-    watermark_expr: str | None = None
+    conn: dict, table: str | None = None, query: str | None = None, watermark_expr: str | None = None
 ) -> int:
     """Get row count from system using pushed-down COUNT(*)"""
     spark: SparkSession = SparkSession.getActiveSession()
@@ -159,7 +164,7 @@ def read_count(
         if is_databricks:
             if conn["type"] == "catalog":
                 spark.sql(f"USE CATALOG `{conn['catalog']}`;")
-        count_query = f"SELECT COUNT(*) as cnt FROM ({query.replace(';','')}) _subq"
+        count_query = f"SELECT COUNT(*) as cnt FROM ({query.replace(';', '')}) _subq"
     else:
         tbl = f"`{conn['catalog']}`.{table}" if is_databricks else table
         where = f" WHERE {watermark_expr}" if watermark_expr else ""
@@ -170,12 +175,37 @@ def read_count(
     return spark.sql(count_query).collect()[0]["cnt"]
 
 
+def get_partition_col_info(conn: dict, table: str) -> PartitionInfo | None:
+
+    match conn["system"]["kind"]:
+        case "SQLServer":
+            return sqlserver_partition_info(conn, table, lambda c, q: query_jdbc(c, q))
+        case _:
+            return None
+
+
+def add_partition_column(read_query: str, partition_info: PartitionInfo) -> str:
+    """Add partition column to query if needed. If it is a SELECT * FROM query then the column is already there."""
+    parallel_query: str = read_query
+    if "SELECT * FROM" not in read_query:
+        quoted_pk: str = f"[{partition_info.column}]"
+        from_pos: int = parallel_query.upper().index(" FROM ")
+        parallel_query = parallel_query[:from_pos] + f", {quoted_pk} AS __lv_pk__" + parallel_query[from_pos:]
+        partition_info.column = "__lv_pk__"
+    print(f"[Auto-Partition] Parallel JDBC read: {partition_info.num_partitions} partitions")
+    return parallel_query
+
+
+def lowercase_cols(df: DataFrame) -> DataFrame:
+    return df.toDF(*[c.lower() for c in df.columns])
+
+
 def read_data(
-    conn: dict, 
-    table: str | None = None, 
-    query: str | None = None, 
-    watermark_expr: str | None = None, 
-    type_mapping_func: str | None = None
+    conn: dict,
+    table: str | None = None,
+    query: str | None = None,
+    watermark_expr: str | None = None,
+    type_mapping_func: str | None = None,
 ) -> DataFrame:
     """Read data from system (Databricks catalog or JDBC)"""
     spark: SparkSession = SparkSession.getActiveSession()
@@ -190,8 +220,8 @@ def read_data(
                 spark.sql(f"USE CATALOG `{conn['catalog']}`;")
 
         df = spark.sql(query) if is_databricks else query_jdbc(conn, query)
-        return df.toDF(*[c.lower() for c in df.columns])
-    
+        return lowercase_cols(df)
+
     # Table mode - may need type mapping
     if is_databricks:
         table = f"`{conn['catalog']}`.{table}"
@@ -203,40 +233,25 @@ def read_data(
             print(f"Issue with REFRESH or UNCACHE: {e}")
 
     watermark_clause: str = f" WHERE {watermark_expr}" if watermark_expr else ""
-    read_query: str = generate_read_query(conn, table, type_mapping_func) if type_mapping_func and type_mapping_func.strip() else f"SELECT * FROM {table}"
+    read_query: str = (
+        generate_read_query(conn, table, type_mapping_func)
+        if type_mapping_func and type_mapping_func.strip()
+        else f"SELECT * FROM {table}"
+    )
     read_query += watermark_clause
 
     if conn["type"] == "jdbc":
-        partition_info = None
-        if conn["system"]["kind"] == "SQLServer":
-            from sql_server_columns import detect_partition_info
-            partition_info = detect_partition_info(table, lambda q: query_jdbc(conn, q))
-
-        if partition_info:
+        partition_col_info: PartitionInfo | None = get_partition_col_info(conn, table)
+        if partition_col_info:
             try:
-                parallel_query: str = read_query
-                drop_col: str | None = None
-                if type_mapping_func and type_mapping_func.strip():
-                    pk_col: str = partition_info["column"]
-                    quoted_pk: str = f"[{pk_col}]"
-                    from_pos: int = parallel_query.upper().index(" FROM ")
-                    parallel_query = (
-                        parallel_query[:from_pos]
-                        + f", {quoted_pk} AS __lv_pk__"
-                        + parallel_query[from_pos:]
-                    )
-                    partition_info = {**partition_info, "column": "__lv_pk__"}
-                    drop_col = "__lv_pk__"
-                print(f"[Auto-Partition] Parallel JDBC read: {partition_info['num_partitions']} partitions")
-                df = query_jdbc(conn, parallel_query, partition_info=partition_info)
-                if drop_col:
-                    df = df.drop(drop_col)
-                return df.toDF(*[c.lower() for c in df.columns])
+                read_query = add_partition_column(read_query, partition_col_info)
+                df = query_jdbc(conn, read_query, partition_col_info).drop("__lv_pk__")
+                return lowercase_cols(df)
             except Exception as e:
                 print(f"[WARN] Parallel read failed ({e}), falling back to single connection")
 
         df = query_jdbc(conn, read_query)
-        return df.toDF(*[c.lower() for c in df.columns])
+        return lowercase_cols(df)
 
     df = spark.sql(read_query)
-    return df.toDF(*[c.lower() for c in df.columns])
+    return lowercase_cols(df)
