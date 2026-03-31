@@ -1,0 +1,72 @@
+import os
+import sys
+from collections.abc import Callable
+
+from pyspark.sql import DataFrame
+
+_jobs_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.path.abspath(".")
+sys.path.insert(0, _jobs_dir)
+
+from models import PartitionInfo
+
+
+def sqlserver_partition_info(
+    conn: dict, table: str, query_fn: Callable[[dict, str], DataFrame]
+) -> PartitionInfo | None:
+    """Auto-detect a partition column from SQL Server's clustered index or PK.
+
+    Returns a PartitionInfo object or None if no suitable column is
+    found (caller falls back to single-connection read).
+    """
+    tbl_parts = table.split(".")
+    if len(tbl_parts) == 2:
+        schema, tbl = tbl_parts
+    elif len(tbl_parts) == 3:
+        _, schema, tbl = tbl_parts
+    else:
+        return None
+
+    try:
+        print("[Auto-Partition] Querying sys.indexes for partition column...")
+
+        meta_query = f"""
+        SELECT TOP 1 c.name AS col_name
+        FROM sys.indexes i
+        JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+        JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+        JOIN sys.types t ON c.system_type_id = t.system_type_id
+        WHERE i.object_id = OBJECT_ID('[{schema}].[{tbl}]')
+          AND (i.is_primary_key = 1 OR i.type = 1)
+          AND t.name IN ('int', 'bigint', 'smallint', 'tinyint')
+          AND ic.key_ordinal = 1
+        ORDER BY i.is_primary_key DESC, i.type ASC
+        """
+
+        rows = query_fn(conn, meta_query).collect()
+        if not rows:
+            print("[Auto-Partition] No integer PK/clustered index found, reverting to single-connection read")
+            return None
+
+        partition_col = rows[0]["col_name"]
+        quoted = f"[{partition_col.replace(']', ']]')}]"
+
+        bounds = query_fn(conn, f"SELECT MIN({quoted}) AS lo, MAX({quoted}) AS hi FROM [{schema}].[{tbl}]").collect()[0]
+
+        if bounds["lo"] is None or bounds["hi"] is None:
+            print("[Auto-Partition] No integer PK/clustered index found, reverting to single-connection read")
+            return None
+
+        lower, upper = int(bounds["lo"]), int(bounds["hi"])
+        if upper - lower <= 0:
+            print("[Auto-Partition] No integer PK/clustered index found, reverting to single-connection read")
+            return None
+
+        info = PartitionInfo(partition_col, lower, upper)
+        print(
+            f"[Auto-Partition] Detected column: [{partition_col}] (range: {lower:,} to {upper:,}, {info.num_partitions} partitions)"
+        )
+
+        return info
+    except Exception as e:
+        print(f"[WARN] Partition detection failed: {e}, reverting to single-connection read")
+        return None
