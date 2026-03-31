@@ -61,12 +61,12 @@ def sqlserver_partition_info(
             print("[Auto-Partition] No integer PK/clustered index found, reverting to single-connection read")
             return None
 
-        num_partitions = min(12, max(4, (upper - lower) // 1_000_000))
+        info = PartitionInfo(partition_col, lower, upper)
         print(
-            f"[Auto-Partition] Detected column: [{partition_col}] (range: {lower:,} to {upper:,}, {num_partitions} partitions)"
+            f"[Auto-Partition] Detected column: [{partition_col}] (range: {lower:,} to {upper:,}, {info.num_partitions} partitions)"
         )
 
-        return PartitionInfo(partition_col, lower, upper, num_partitions)
+        return info
     except Exception as e:
         print(f"[WARN] Partition detection failed: {e}, reverting to single-connection read")
         return None
