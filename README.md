@@ -89,7 +89,43 @@ When differences are found, LiveValidator captures sample records and provides d
 
 ### Setup
 
-#### Step 1: Configure Your Environment
+#### Step 1: Create Database Credentials Secret
+
+Before deploying, create a credential for your App to authenticate with LakeBase and store them in Databricks Secrets.
+
+**1. Choose a username** — We recommend `apprunner`.
+
+**2. Generate a secure password** — Use [Password Generator](https://www.calculator.net/password-generator.html) to create a password with **at least 60 bits of entropy**. 
+
+> **Note:** Avoid special characters that may cause issues in connection strings (e.g., `@`, `%`, `/`).
+
+**3. Store credentials in a secret scope** — Use either the CLI or Python SDK:
+
+**Option A: Databricks CLI**
+
+```bash
+databricks secrets create-scope livevalidator --profile <my-profile>
+
+# Set database credentials as secrets
+databricks secrets put-secret livevalidator db_user --string-value "apprunner" --profile <my-profile>
+databricks secrets put-secret livevalidator db_password --string-value "<your-password>" --profile <my-profile>
+```
+
+**Option B: Python SDK**
+
+```python
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.workspace import AclPermission
+
+w = WorkspaceClient()
+w.secrets.create_scope('livevalidator')
+w.secrets.put_secret('livevalidator', key="db_user", string_value="apprunner")
+w.secrets.put_secret('livevalidator', key="db_password", string_value="<your-password>")
+```
+
+---
+
+#### Step 2: Configure Your Environment
 
 ```bash
 # Copy the example config
@@ -127,7 +163,7 @@ Remove anything you don't need. You can also come back to this step later after 
 
 ---
 
-#### Step 2: Deploy DAB
+#### Step 3: Deploy DAB
 
 ```bash
 databricks bundle deploy -t <your-target>
@@ -137,7 +173,7 @@ databricks bundle deploy -t <your-target>
 
 ---
 
-#### Step 3: Start App
+#### Step 4: Start App
 
 ```bash
 # start the app's compute
@@ -151,7 +187,7 @@ Or simply navigate to **Compute → Apps** and start it from the UI.
 
 ---
 
-#### Step 4: Navigate to the App
+#### Step 5: Navigate to the App
 
 Inspect the app configuration page under **Compute → Apps**:
 
@@ -167,7 +203,7 @@ On first launch, you'll see a banner prompting you to go to the Setup page.
 
 ---
 
-#### Step 5: Setup Database
+#### Step 6: Setup Database
 
 > **Important:** Must be run by the LakeBase owner (whoever deployed the DAB).
 
@@ -175,10 +211,10 @@ Click **"Go to Setup →"** to proceed with database initialization:
 
 ![Database Not Initialized Banner](docs/images/setup-banner.png)
 
-Open **Databricks SQL Editor** attached to the `live-validator` Postgres compute and run:
+Open **Databricks SQL Editor** attached to the `live-validator` Postgres compute and run (replacing `<your-password>` with the password from Step 1, and `apprunner` if you chose a different username):
 
 ```sql
-CREATE USER apprunner WITH PASSWORD 'beepboop123';
+CREATE USER apprunner WITH PASSWORD '<your-password>';
 
 CREATE SCHEMA IF NOT EXISTS control;
 GRANT USAGE ON SCHEMA control to apprunner;
@@ -196,7 +232,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA control
 
 ---
 
-#### Step 6: Initialize Metadata Tables
+#### Step 7: Initialize Metadata Tables
 
 Click the button to initialize the tables:
 
@@ -211,7 +247,7 @@ Then:
 
 ---
 
-#### Step 7: Start the Job Sentinel
+#### Step 8: Start the Job Sentinel
 
 This background job processes the validation queue:
 
@@ -221,7 +257,7 @@ databricks bundle run job_sentinel --no-wait -t <your-target>
 
 ---
 
-#### Step 8: Run Your First Validation
+#### Step 9: Run Your First Validation
 
 You're all set! Here's an overview of next steps:
 

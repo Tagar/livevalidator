@@ -1,6 +1,6 @@
 # Contributing
 
-## Dev set-up - Running the app locally
+## Dev set-up - Running the app & postgres locally
 
 ### 1. Setup Postgres
 To set up your environment on local, you will need to first set up your local postgres database.
@@ -37,6 +37,8 @@ PGHOST=localhost
 PGPORT=5432
 PGDATABASE=postgres
 DB_USE_SSL=false
+DB_USER=apprunner
+DB_PASSWORD=beepboop123
 ```
 
 **Note:** The `.env` file is gitignored and will not be committed.

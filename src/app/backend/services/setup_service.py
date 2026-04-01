@@ -1,5 +1,6 @@
 """Setup and database initialization service."""
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,13 +26,14 @@ class SetupService:
             raise HTTPException(status_code=500, detail=f"DDL file not found: {ddl_file}")
 
         ddl_sql = ddl_file.read_text()
-        grants_sql = grants_file.read_text() if grants_file.exists() else ""
+        db_user = os.getenv("DB_USER")
 
         try:
             await self.db.execute(ddl_sql)
 
-            if grants_sql:
+            if grants_file.exists() and db_user:
                 try:
+                    grants_sql = grants_file.read_text().format(db_user=db_user)
                     await self.db.execute(grants_sql)
                 except Exception as e:
                     print(f"[warn] Grants failed (might be ok in local dev): {e}")

@@ -20,8 +20,18 @@ else:
 PGDATABASE = os.getenv("PGDATABASE")
 PGHOST = os.getenv("PGHOST")
 PGPORT = os.getenv("PGPORT")
-# DB_DSN = os.getenv("DB_DSN")
-DB_DSN = f"postgresql://apprunner:beepboop123@{PGHOST}:{PGPORT}/{PGDATABASE}"
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+INVALID_PASSWORD_CHARS = {"@", "%", "/", ":"}
+if DB_PASSWORD and (bad := INVALID_PASSWORD_CHARS.intersection(DB_PASSWORD)):
+    raise ValueError(
+        f"DB_PASSWORD contains characters that break connection strings: {bad}\n"
+        "Please regenerate your password without @, %, /, or : characters.\n"
+        "See: https://www.calculator.net/password-generator.html"
+    )
+
+DB_DSN = f"postgresql://{DB_USER}:{DB_PASSWORD}@{PGHOST}:{PGPORT}/{PGDATABASE}"
 
 DB_USE_SSL = os.getenv("PGSSLMODE") == "require"
 DB_SSL_CA_FILE = os.getenv("DB_SSL_CA_FILE", "backend/databricks-ca.pem")
