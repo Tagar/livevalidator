@@ -49,13 +49,44 @@ export function SetupView() {
           <div className="mb-5 pb-5 border-b border-gray-700">
             <h4 className="text-purple-300 font-semibold text-lg mb-3">
               <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">1</span>
+              Create Database Credentials Secret
+            </h4>
+            <p className="text-gray-300 text-sm mb-3 ml-9">
+              Generate a secure password using{' '}
+              <a href="https://www.calculator.net/password-generator.html" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+                Password Generator
+              </a>{' '}
+              with <strong>at least 60 bits of entropy</strong>.
+            </p>
+            <div className="mt-2 mb-3 ml-9 px-3 py-2 bg-amber-950/40 border-l-2 border-amber-500 rounded-r text-xs text-amber-100/90">
+              <span className="font-semibold text-amber-300">Important:</span> Avoid <code className="text-amber-200">@</code>, <code className="text-amber-200">%</code>, <code className="text-amber-200">/</code>, <code className="text-amber-200">:</code> characters — they break connection strings.
+            </div>
+            <p className="text-gray-300 text-sm mb-3 ml-9">
+              Store credentials in a secret scope:
+            </p>
+            <pre className="bg-charcoal-800 p-3 rounded text-xs text-gray-200 overflow-x-auto border border-gray-700 ml-9">
+{`from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.workspace import AclPermission
+
+w = WorkspaceClient()
+w.secrets.create_scope('livevalidator')
+w.secrets.put_acl('livevalidator', 'users', AclPermission.READ)
+w.secrets.put_secret('livevalidator', key="db_user", string_value="apprunner")
+w.secrets.put_secret('livevalidator', key="db_password", string_value="<your-password>")`}
+            </pre>
+          </div>
+
+          {/* Step 2 */}
+          <div className="mb-5 pb-5 border-b border-gray-700">
+            <h4 className="text-purple-300 font-semibold text-lg mb-3">
+              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">2</span>
               Run SQL Commands as Database Creator
             </h4>
             <p className="text-gray-300 text-sm mb-3 ml-9">
-              The <strong>creator</strong> of the Lakebase PostgreSQL instance must run the following commands in the <strong>Databricks SQL Editor</strong>:
+              The <strong>creator</strong> of the Lakebase PostgreSQL instance must run the following in the <strong>Databricks SQL Editor</strong>. Replace <code className="text-purple-300">apprunner</code> if you chose a different username in Step 1:
             </p>
             <pre className="bg-charcoal-800 p-3 rounded text-xs text-gray-200 overflow-x-auto border border-gray-700 ml-9">
-{`CREATE USER apprunner WITH PASSWORD 'beepboop123';
+{`CREATE USER apprunner WITH PASSWORD '<your-password>';
 
 CREATE SCHEMA IF NOT EXISTS control;
 GRANT USAGE ON SCHEMA control to apprunner;
@@ -70,10 +101,10 @@ GRANT USAGE, SELECT ON SEQUENCES TO apprunner;`}
             </pre>
           </div>
 
-          {/* Step 2 */}
+          {/* Step 3 */}
           <div className="mb-5 pb-5 border-b border-gray-700">
             <h4 className="text-purple-300 font-semibold text-lg mb-3">
-              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">2</span>
+              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">3</span>
               Initialize the Database
             </h4>
             <p className="text-gray-300 text-sm mb-3 ml-9">
@@ -90,10 +121,10 @@ GRANT USAGE, SELECT ON SEQUENCES TO apprunner;`}
             </div>
           </div>
 
-          {/* Step 3 */}
+          {/* Step 4 */}
           <div className="mb-5 pb-5 border-b border-gray-700">
             <h4 className="text-purple-300 font-semibold text-lg mb-3">
-              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">3</span>
+              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">4</span>
               Hard refresh
             </h4>
             <p className="text-gray-300 text-sm ml-9">
@@ -101,10 +132,10 @@ GRANT USAGE, SELECT ON SEQUENCES TO apprunner;`}
             </p>
           </div>
 
-          {/* Step 4 */}
+          {/* Step 5 */}
           <div className="mb-5 pb-5 border-b border-gray-700">
             <h4 className="text-purple-300 font-semibold text-lg mb-3">
-              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">4</span>
+              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">5</span>
               Configure Source and Target Systems
             </h4>
             <p className="text-gray-300 text-sm ml-9">
@@ -116,10 +147,10 @@ GRANT USAGE, SELECT ON SEQUENCES TO apprunner;`}
             </div>
           </div>
 
-          {/* Step 5 */}
+          {/* Step 6 */}
           <div className="mb-5 pb-5 border-b border-gray-700">
             <h4 className="text-purple-300 font-semibold text-lg mb-3">
-              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">5</span>
+              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">6</span>
               Define Secrets
             </h4>
             <p className="text-gray-300 text-sm mb-3 ml-9">
@@ -136,7 +167,6 @@ GRANT USAGE, SELECT ON SEQUENCES TO apprunner;`}
 from databricks.sdk.service.workspace import AclPermission
 
 w = WorkspaceClient()
-w.secrets.create_scope('livevalidator')
 w.secrets.put_acl('livevalidator', 'users', AclPermission.READ)
 w.secrets.put_secret('livevalidator', key="lv-app-id", string_value=<first value>)
 w.secrets.put_secret('livevalidator', key="lv-app-secret", string_value=<second value>)`}
@@ -152,10 +182,10 @@ w.secrets.put_secret('livevalidator', key="mysystem_pass", string_value="*******
             </div>
           </div>
 
-          {/* Step 6 */}
+          {/* Step 7 */}
           <div className="mb-5 pb-5 border-b border-gray-700">
             <h4 className="text-purple-300 font-semibold text-lg mb-3">
-              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">6</span>
+              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">7</span>
               Start <strong>Job Sentinel</strong>
             </h4>
             <p className="text-gray-300 text-sm ml-9">
@@ -169,10 +199,10 @@ w.secrets.put_secret('livevalidator', key="mysystem_pass", string_value="*******
             </p>
           </div>
 
-          {/* Step 7 */}
+          {/* Step 8 */}
           <div className="mb-5">
             <h4 className="text-purple-300 font-semibold text-lg mb-3">
-              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">7</span>
+              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">8</span>
               Add Tables and Queries
             </h4>
             <p className="text-gray-300 text-sm ml-9">
@@ -181,10 +211,10 @@ w.secrets.put_secret('livevalidator', key="mysystem_pass", string_value="*******
             </p>
           </div>
 
-          {/* Step 8 */}
+          {/* Step 9 */}
           <div className="mb-5 pb-5 border-b border-gray-700">
             <h4 className="text-purple-300 font-semibold text-lg mb-3">
-              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">8</span>
+              <span className="bg-purple-600 text-white rounded-full w-7 h-7 inline-flex items-center justify-center mr-2 text-sm">9</span>
               Create Schedules
             </h4>
             <p className="text-gray-300 text-sm ml-9">

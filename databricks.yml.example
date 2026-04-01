@@ -30,6 +30,16 @@ resources:
           job:
             id: ${resources.jobs.fetch_lineage.id}
             permission: 'CAN_MANAGE_RUN'
+        - name: db_user
+          secret:
+            key: db_user
+            permission: "READ"
+            scope: livevalidator
+        - name: db_password
+          secret:
+            key: db_password
+            permission: "READ"
+            scope: livevalidator
 
   database_instances:
     live_validator_database:

@@ -9,6 +9,10 @@ env:
     valueFrom: 'run-validation'
   - name: LINEAGE_JOB_ID
     valueFrom: 'fetch-lineage'
+  - name: "DB_USER"
+    valueFrom: "db_user"
+  - name: "DB_PASSWORD"
+    valueFrom: "db_password" 
 
 # Allow service principals and jobs to access the app
 permissions:
