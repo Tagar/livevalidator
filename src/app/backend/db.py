@@ -23,6 +23,27 @@ PGPORT = os.getenv("PGPORT")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 
+
+class CredentialsNotConfiguredError(Exception):
+    """Raised when database credentials are missing."""
+
+    pass
+
+
+def _check_credentials():
+    """Validate that DB credentials are configured."""
+    if not DB_USER or not DB_PASSWORD:
+        missing = []
+        if not DB_USER:
+            missing.append("DB_USER")
+        if not DB_PASSWORD:
+            missing.append("DB_PASSWORD")
+        raise CredentialsNotConfiguredError(
+            f"Missing database credentials: {', '.join(missing)}. "
+            "Ensure secrets are created in Databricks (Step 1 in README) and referenced in databricks.yml under apps.resources."
+        )
+
+
 INVALID_PASSWORD_CHARS = {"@", "%", "/", ":"}
 if DB_PASSWORD and (bad := INVALID_PASSWORD_CHARS.intersection(DB_PASSWORD)):
     raise ValueError(
@@ -67,6 +88,7 @@ async def init_pool():
     """Initialize the database connection pool."""
     global pool
     if pool is None:
+        _check_credentials()
         print(f"🔌 Connecting to database: {DB_DSN.split('@')[1] if '@' in DB_DSN else DB_DSN}")
         print(f"🔒 SSL enabled: {DB_USE_SSL}")
 
