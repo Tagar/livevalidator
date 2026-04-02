@@ -171,7 +171,7 @@ export function EntityListView({
 
   return (
     <>
-      {error && error.action !== "setup_required" && <ErrorBox message={error.message} onClose={onClearError} />}
+      {error && error.action !== "setup_required" && error.action !== "credentials_required" && <ErrorBox message={error.message} onClose={onClearError} />}
       
       <div className="mb-4">
         <h2 className="text-3xl font-bold text-rust-light mb-1">{title}</h2>

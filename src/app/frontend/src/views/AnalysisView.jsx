@@ -844,7 +844,7 @@ export function AnalysisView({
 
   return (
     <>
-      {error && error.action !== 'setup_required' && (
+      {error && error.action !== 'setup_required' && error.action !== 'credentials_required' && (
         <ErrorBox message={error.message} onClose={tablesError ? onClearTablesError : onClearQueriesError} />
       )}
 

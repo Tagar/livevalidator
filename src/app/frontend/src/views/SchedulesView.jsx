@@ -12,7 +12,7 @@ export function SchedulesView({
 }) {
   return (
     <>
-      {error && error.action !== "setup_required" && <ErrorBox message={error.message} onClose={onClearError} />}
+      {error && error.action !== "setup_required" && error.action !== "credentials_required" && <ErrorBox message={error.message} onClose={onClearError} />}
       <h2 className="text-2xl font-semibold text-rust-light mb-4">Schedules</h2>
       <button onClick={() => onEdit({})} className="mb-3 px-3 py-2 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500">Add Schedule</button>
       {loading ? <p className="text-gray-400">Loading…</p> : (

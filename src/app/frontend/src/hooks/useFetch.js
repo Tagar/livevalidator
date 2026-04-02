@@ -21,16 +21,18 @@ export function useFetch(url, deps = []) {
           const text = await r.text().catch(() => "");
           let action = null;
           let message = null;
+          let detail = null;
           try {
             const parsed = JSON.parse(text);
             if (parsed.action) action = parsed.action;
             if (parsed.message) message = parsed.message;
+            if (parsed.detail) detail = parsed.detail;
           } catch {}
           
           if (action === "setup_required" || action === "credentials_required") {
             const err = new Error(message || "Database not initialized");
             err.action = action;
-            err.detail = parsed?.detail;
+            err.detail = detail;
             throw err;
           }
           

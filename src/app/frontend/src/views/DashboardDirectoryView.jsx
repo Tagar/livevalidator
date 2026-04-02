@@ -317,7 +317,7 @@ export function DashboardDirectoryView({ dashboards, loading, error, onSelect, o
     );
   }
 
-  if (error?.action === 'setup_required') {
+  if (error?.action === 'setup_required' || error?.action === 'credentials_required') {
     return (
       <div>
         <div className="mb-4">

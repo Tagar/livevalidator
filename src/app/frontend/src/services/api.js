@@ -22,7 +22,7 @@ export async function apiCall(method, url, body) {
     if (action === "setup_required" || action === "credentials_required") {
       const err = new Error(message || detail);
       err.action = action;
-      err.detail = parsed?.detail;
+      err.detail = detail;
       throw err;
     }
     

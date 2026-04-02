@@ -236,7 +236,7 @@ export function QueueView({
 
   return (
     <>
-      {triggers.error && triggers.error.action !== "setup_required" && <ErrorBox message={triggers.error.message} onClose={triggers.clearError} />}
+      {triggers.error && triggers.error.action !== "setup_required" && triggers.error.action !== "credentials_required" && <ErrorBox message={triggers.error.message} onClose={triggers.clearError} />}
       
       <div className="mb-4">
         <h2 className="text-3xl font-bold text-rust-light mb-1">Validation Queue</h2>

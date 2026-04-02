@@ -15,7 +15,7 @@ export function SystemsView({
 
   return (
     <>
-      {error && error.action !== "setup_required" && <ErrorBox message={error.message} onClose={onClearError} />}
+      {error && error.action !== "setup_required" && error.action !== "credentials_required" && <ErrorBox message={error.message} onClose={onClearError} />}
       <h2 className="text-2xl font-semibold text-rust-light mb-4">Systems</h2>
       <button 
         onClick={() => onEdit({})} 
