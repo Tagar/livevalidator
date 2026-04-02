@@ -27,9 +27,10 @@ export function useFetch(url, deps = []) {
             if (parsed.message) message = parsed.message;
           } catch {}
           
-          if (action === "setup_required") {
+          if (action === "setup_required" || action === "credentials_required") {
             const err = new Error(message || "Database not initialized");
-            err.action = "setup_required";
+            err.action = action;
+            err.detail = parsed?.detail;
             throw err;
           }
           

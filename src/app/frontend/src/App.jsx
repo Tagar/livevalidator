@@ -129,10 +129,10 @@ export default function App() {
     }
   }, [view]);
   
-  // Check if database needs initialization
-  const setupRequired = [tbl.error, qs.error, sc.error, sys.error, dashboards.error, globalConfig.error].some(
-    err => err?.action === "setup_required"
-  );
+  // Check if database needs initialization or credentials are missing
+  const allErrors = [tbl.error, qs.error, sc.error, sys.error, dashboards.error, globalConfig.error];
+  const setupError = allErrors.find(err => err?.action === "setup_required" || err?.action === "credentials_required");
+  const setupRequired = !!setupError;
   
   // Modal/Edit states
   const [editingCell, setEditingCell] = useState(null);
@@ -466,9 +466,9 @@ export default function App() {
           <div className="my-4 p-4 bg-rust border-l-4 border-rust-light rounded-md shadow-lg">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-gray-100 mb-1">⚠️ Database Not Initialized or Update Required</h3>
+                <h3 className="text-lg font-semibold text-gray-100 mb-1">⚠️ {setupError?.detail || "Database Not Initialized or Update Required"}</h3>
                 <p className="text-gray-200">
-                  Some or all database tables have not been created yet. Please go to the Setup tab and click "Initialize Database" to create any missing tables.
+                  {setupError?.message || "Some or all database tables have not been created yet. Please go to the Setup tab and click \"Initialize Database\" to create any missing tables."}
                 </p>
               </div>
               <button 
