@@ -40,7 +40,7 @@ export function useFetch(url, deps = []) {
             throw new Error("Not able to access Databricks workspace. Please enable VPN if applicable.");
           }
           
-          throw new Error(`${r.status} ${r.statusText}: ${text || "Request failed"}`);
+          throw new Error(message || detail || `${r.status}: ${r.statusText || "Request failed"}`);
         }
         return r.json();
       })

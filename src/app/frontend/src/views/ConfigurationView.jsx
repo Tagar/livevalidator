@@ -103,7 +103,7 @@ export function ConfigurationView() {
 
   return (
     <>
-      {error && <ErrorBox message={error.message} onClose={() => setError(null)} />}
+      {error && error.action !== "setup_required" && error.action !== "credentials_required" && <ErrorBox message={error.message} onClose={() => setError(null)} />}
       {successMessage && (
         <div className="mb-4 p-3 bg-green-900/40 border border-green-700 rounded-lg text-green-300">
           {successMessage}

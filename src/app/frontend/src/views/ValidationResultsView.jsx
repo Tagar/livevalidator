@@ -296,7 +296,7 @@ export function ValidationResultsView({ highlightId, onClearHighlight, onNavigat
 
   return (
     <>
-      {error && <ErrorBox message={error.message} onClose={() => setError(null)} />}
+      {error && error.action !== "setup_required" && error.action !== "credentials_required" && <ErrorBox message={error.message} onClose={() => setError(null)} />}
       <div className="mb-4 flex items-start justify-between">
         <h2 className="text-3xl font-bold text-rust-light">Validation Results</h2>
         {selectedIds.length > 0 && (
