@@ -18,10 +18,11 @@ export async function apiCall(method, url, body) {
       if (parsed.message) message = parsed.message;
     } catch {}
     
-    // If this is a setup_required error, throw a special error
-    if (action === "setup_required") {
+    // If this is a setup_required or credentials_required error, throw a special error
+    if (action === "setup_required" || action === "credentials_required") {
       const err = new Error(message || detail);
-      err.action = "setup_required";
+      err.action = action;
+      err.detail = parsed?.detail;
       throw err;
     }
     

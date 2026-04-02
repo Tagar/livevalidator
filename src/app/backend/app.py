@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.db import CredentialsNotConfiguredError
 from backend.dependencies import set_current_user_email
 from backend.routers import (
     admin_router,
@@ -61,6 +62,18 @@ app.add_middleware(
 
 
 # ---------- Global Exception Handlers ----------
+@app.exception_handler(CredentialsNotConfiguredError)
+async def handle_credentials_not_configured(request: Request, exc: CredentialsNotConfiguredError):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Database credentials not configured",
+            "action": "credentials_required",
+            "message": str(exc),
+        },
+    )
+
+
 @app.exception_handler(asyncpg.exceptions.UndefinedTableError)
 async def handle_undefined_table(request: Request, exc: asyncpg.exceptions.UndefinedTableError):
     return JSONResponse(
@@ -80,7 +93,7 @@ async def handle_undefined_object(request: Request, exc: asyncpg.exceptions.Unde
         content={
             "detail": "Database role not configured",
             "action": "setup_required",
-            "message": f"Database setup required: {exc}. Please ensure the database role exists (run grants.sql).",
+            "message": f"Database setup required: {exc}. Please ensure the database role exists.",
         },
     )
 
