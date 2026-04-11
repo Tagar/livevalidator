@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 from collections.abc import Callable
@@ -11,8 +10,7 @@ _jobs_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals(
 sys.path.insert(0, _jobs_dir)
 
 from backend_api_client import BackendAPIClient
-from models import PartitionInfo
-from sql_server_columns import sqlserver_partition_info
+from jdbc_reader import JDBCReader
 from teradata_columns import teradata_columns
 
 
@@ -20,32 +18,18 @@ def get_connection_info(system_name: str, backend_client: BackendAPIClient) -> d
     """Fetch system and prepare connection info"""
     system: dict = backend_client.api_call("GET", f"/api/systems/name/{system_name}")
 
-    if system["kind"] == "Databricks":
-        return {"type": "catalog", "catalog": system.get("catalog"), "system": system}
-
-    jdbc_str: str
-    if system["jdbc_string"]:
-        jdbc_str = system["jdbc_string"]
-    else:
-        match system["kind"]:
-            case "Teradata":
-                jdbc_str = f"jdbc:teradata://{system['host']}"
-            case "Oracle":
-                jdbc_str = f"jdbc:oracle:thin:@//{system['host']}:{system['port']}/{system['database']}"
-            case "SQLServer":
-                jdbc_str = f"jdbc:sqlserver://{system['host']}:{system['port']};databaseName={system['database']};encrypt=true;trustServerCertificate=true"
-            case _:
-                jdbc_str = f"jdbc:{system['kind'].lower()}://{system['host']}:{system['port']}/{system['database']}"
-        print(f"Generated {system['kind']} JDBC string: {jdbc_str}")
-
-    scope: str = system.get("secret_scope") or "livevalidator"
-    return {
-        "type": "jdbc",
-        "jdbc_string": jdbc_str,
-        "username": dbutils.secrets.get(scope, system["user_secret_key"]) if system.get("user_secret_key") else None,
-        "password": dbutils.secrets.get(scope, system["pass_secret_key"]) if system.get("pass_secret_key") else None,
-        "system": system,
-    }
+    match system["kind"]:
+        case "Databricks":
+            return {"type": "catalog", "catalog": system.get("catalog"), "system": system}
+        case "Teradata":
+            # teradata always needs host/username/password because it uses the python library teradatasql to run `HELP COLUMN ...` command
+            user: str | None = dbutils.secrets.get(system.get("secret_scope"), system["user_secret_key"]) if system.get("user_secret_key") else None
+            password: str | None = dbutils.secrets.get(system.get("secret_scope"), system["pass_secret_key"]) if system.get("pass_secret_key") else None
+            return {
+                "type": "jdbc", "method": system.get("jdbc_method"), "system": system,
+                "host": system.get("host"), "username": user, "password": password}
+        case _:
+            return {"type": "jdbc", "method": system.get("jdbc_method"), "system": system}
 
 
 def get_type_transformations(
@@ -56,46 +40,6 @@ def get_type_transformations(
         "GET", f"/api/type-transformations/for-validation/{source_system_id}/{target_system_id}"
     )
     return data.get("system_a_function", ""), data.get("system_b_function", "")
-
-
-def query_jdbc(conn_info: dict, query: str, partition_info: PartitionInfo | None = None) -> DataFrame:
-    """Execute a JDBC query and return DataFrame.
-
-    When *partition_info* is provided, switches from single-connection
-    ``.option("query", ...)`` to parallel ``.option("dbtable", ...)`` with
-    Spark JDBC partitioning.
-    """
-    spark: SparkSession = SparkSession.getActiveSession()
-    driver: str | None = conn_info["system"].get("driver_connector")
-    if not driver:
-        raise ValueError(f"JDBC driver not set for system: {conn_info['system']['name']}")
-
-    reader = (
-        spark.read.format("jdbc")
-        .option("url", conn_info["jdbc_string"])
-        .option("driver", driver)
-        .option("user", conn_info.get("username"))
-        .option("password", conn_info.get("password"))
-    )
-
-    if partition_info:
-        reader = (
-            reader.option("dbtable", f"({query}) AS _t")
-            .option("partitionColumn", partition_info.column)
-            .option("lowerBound", partition_info.lower)
-            .option("upperBound", partition_info.upper)
-            .option("numPartitions", partition_info.num_partitions)
-        )
-    else:
-        reader = reader.option("query", query)
-
-    options = conn_info["system"].get("options") or {}
-    if isinstance(options, str):
-        options = json.loads(options)
-    for key, val in options.get("jdbc", {}).items():
-        reader = reader.option(key, val)
-
-    return reader.load()
 
 
 def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
@@ -119,7 +63,7 @@ def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
             table_schema = spark.read.table(f"{catalog}.{schema}.{tbl}").schema
             return [(col.name, str(col.dataType)) for col in table_schema.fields]
         case "Teradata":
-            return teradata_columns(conn["system"]["host"], conn["username"], conn["password"], schema=schema, tbl=tbl)
+            return teradata_columns(conn["host"], conn["username"], conn["password"], schema=schema, tbl=tbl)
         case "Oracle":
             query_columns = f"""
             SELECT column_name, data_type FROM all_tab_columns
@@ -135,7 +79,7 @@ def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
         case _:
             raise ValueError(f"Unsupported system type: {conn['system']['kind']}")
 
-    column_df: DataFrame = query_jdbc(conn, query_columns)
+    column_df: DataFrame = JDBCReader(conn).query(query_columns)
     return [(row[0], row[1]) for row in column_df.collect()]
 
 
@@ -171,29 +115,8 @@ def read_count(
         count_query = f"SELECT COUNT(*) as cnt FROM {tbl}{where}"
 
     if conn["type"] == "jdbc":
-        return query_jdbc(conn, count_query).collect()[0]["cnt"]
+        return JDBCReader(conn).query(count_query).collect()[0]["cnt"]
     return spark.sql(count_query).collect()[0]["cnt"]
-
-
-def get_partition_col_info(conn: dict, table: str) -> PartitionInfo | None:
-
-    match conn["system"]["kind"]:
-        case "SQLServer":
-            return sqlserver_partition_info(conn, table, lambda c, q: query_jdbc(c, q))
-        case _:
-            return None
-
-
-def add_partition_column(read_query: str, partition_info: PartitionInfo) -> str:
-    """Add partition column to query if needed. If it is a SELECT * FROM query then the column is already there."""
-    parallel_query: str = read_query
-    if "SELECT * FROM" not in read_query:
-        quoted_pk: str = f"[{partition_info.column}]"
-        from_pos: int = parallel_query.upper().index(" FROM ")
-        parallel_query = parallel_query[:from_pos] + f", {quoted_pk} AS __lv_pk__" + parallel_query[from_pos:]
-        partition_info.column = "__lv_pk__"
-    print(f"[Auto-Partition] Parallel JDBC read: {partition_info.num_partitions} partitions")
-    return parallel_query
 
 
 def lowercase_cols(df: DataFrame) -> DataFrame:
@@ -210,6 +133,7 @@ def read_data(
     """Read data from system (Databricks catalog or JDBC)"""
     spark: SparkSession = SparkSession.getActiveSession()
     is_databricks: bool = conn["system"]["kind"] == "Databricks"
+    jdbc_reader: JDBCReader = JDBCReader(conn)
 
     df: DataFrame
     if query:
@@ -219,18 +143,18 @@ def read_data(
             if conn["type"] == "catalog":
                 spark.sql(f"USE CATALOG `{conn['catalog']}`;")
 
-        df = spark.sql(query) if is_databricks else query_jdbc(conn, query)
+        df = spark.sql(query) if is_databricks else jdbc_reader.query(query)
         return lowercase_cols(df)
 
-    # Table mode - may need type mapping
     if is_databricks:
         table = f"`{conn['catalog']}`.{table}"
         # invalidate the disk cache, may fix some of the caching issues we see
-        try:
-            spark.sql(f"REFRESH TABLE {table}")
-            spark.sql(f"UNCACHE TABLE {table}")
-        except Exception as e:
-            print(f"Issue with REFRESH or UNCACHE: {e}")
+        if not os.environ.get("IS_SERVERLESS"):
+            try:
+                spark.sql(f"REFRESH TABLE {table}")
+                spark.sql(f"UNCACHE TABLE {table}")
+            except Exception as e:
+                print(f"Issue with REFRESH or UNCACHE: {e}")
 
     watermark_clause: str = f" WHERE {watermark_expr}" if watermark_expr else ""
     read_query: str = (
@@ -241,16 +165,8 @@ def read_data(
     read_query += watermark_clause
 
     if conn["type"] == "jdbc":
-        partition_col_info: PartitionInfo | None = get_partition_col_info(conn, table)
-        if partition_col_info:
-            try:
-                read_query = add_partition_column(read_query, partition_col_info)
-                df = query_jdbc(conn, read_query, partition_col_info).drop("__lv_pk__")
-                return lowercase_cols(df)
-            except Exception as e:
-                print(f"[WARN] Parallel read failed ({e}), falling back to single connection")
-
-        df = query_jdbc(conn, read_query)
+        jdbc_reader.detect_partition_info(table)
+        df = jdbc_reader.query(read_query)
         return lowercase_cols(df)
 
     df = spark.sql(read_query)

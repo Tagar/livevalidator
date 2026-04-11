@@ -129,9 +129,15 @@ export default function App() {
     }
   }, [view]);
   
-  // Check if database needs initialization or credentials are missing
+  // Check if database needs initialization, credentials missing, or schema outdated
   const allErrors = [tbl.error, qs.error, sc.error, sys.error, dashboards.error, globalConfig.error];
-  const setupError = allErrors.find(err => err?.action === "setup_required" || err?.action === "credentials_required");
+  const schemaDrift = !sys.loading && sys.data?.length > 0 && sys.data[0].compute_mode === undefined;
+  const schemaError = schemaDrift ? {
+    action: "setup_required",
+    detail: "Database schema update required",
+    message: "New columns are missing. Please go to the Setup tab and click 'Initialize Database' to apply migrations (no data will be lost).",
+  } : null;
+  const setupError = schemaError || allErrors.find(err => err?.action === "setup_required" || err?.action === "credentials_required");
   const setupRequired = !!setupError;
   
   // Modal/Edit states
@@ -195,15 +201,17 @@ export default function App() {
   };
 
   // System save handler
-  const handleSystemSave = async (form) => {
+  const handleSystemSave = async (form, { close = true } = {}) => {
     try {
+      let saved;
       if (editingSystem?.id) {
-        await apiCall("PUT", `/api/systems/${editingSystem.id}`, form);
+        saved = await apiCall("PUT", `/api/systems/${editingSystem.id}`, form);
       } else {
-        await apiCall("POST", `/api/systems`, form);
+        saved = await apiCall("POST", `/api/systems`, form);
       }
       refreshAll();
-      setEditingSystem(null);
+      if (close) setEditingSystem(null);
+      else setEditingSystem(saved);
     } catch (err) {
       if (err.message.includes("409") || err.message.includes("version_conflict")) {
         setConflict({

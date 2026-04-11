@@ -129,9 +129,21 @@ class TestStaticMethods:
     def test_get_validation_job_id(self):
         assert DatabricksService.get_validation_job_id() == "123"
 
+    @patch.dict(os.environ, {"VALIDATION_JOB_SERVERLESS_ID": "124"})
+    def test_get_validation_serverless_job_id(self):
+        assert DatabricksService.get_validation_serverless_job_id() == "124"
+
     @patch.dict(os.environ, {"LINEAGE_JOB_ID": "456"})
     def test_get_lineage_job_id(self):
         assert DatabricksService.get_lineage_job_id() == "456"
+
+    @patch.dict(os.environ, {"TEST_CONNECTION_JOB_ID": "789"})
+    def test_get_test_connection_job_id(self):
+        assert DatabricksService.get_test_connection_job_id() == "789"
+
+    @patch.dict(os.environ, {"TEST_CONNECTION_JOB_SERVERLESS_ID": "790"})
+    def test_get_test_connection_serverless_job_id(self):
+        assert DatabricksService.get_test_connection_serverless_job_id() == "790"
 
     @patch.dict(os.environ, {"DATABRICKS_APP_URL": "https://backend.com"})
     def test_get_backend_url(self):

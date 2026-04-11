@@ -1,5 +1,6 @@
 bundle:
   name: LiveValidator
+  engine: direct
 
 include:
   - resources/*.yml
@@ -7,7 +8,14 @@ include:
 workspace:
   root_path: /Workspace/LiveValidator
 
+variables:
+  serverless_version:
+    description: The serverless environment version
+    default: 5
+
 resources:
+
+  # Web app
   apps:
     live_validator:
       name: live-validator
@@ -26,6 +34,18 @@ resources:
           job:
             id: ${resources.jobs.run_validation.id}
             permission: 'CAN_MANAGE_RUN'
+        - name: run-validation-serverless
+          job:
+            id: ${resources.jobs.run_validation_serverless.id}
+            permission: 'CAN_MANAGE_RUN'
+        - name: test-connection
+          job:
+            id: ${resources.jobs.test_connection.id}
+            permission: 'CAN_MANAGE_RUN'
+        - name: test-connection-serverless
+          job:
+            id: ${resources.jobs.test_connection_serverless.id}
+            permission: 'CAN_MANAGE_RUN'
         - name: fetch-lineage
           job:
             id: ${resources.jobs.fetch_lineage.id}
@@ -41,6 +61,7 @@ resources:
             permission: "READ"
             scope: livevalidator
 
+  # LakeBase
   database_instances:
     live_validator_database:
       name: live-validator
@@ -53,6 +74,7 @@ resources:
       database_name: databricks_postgres
       create_database_if_not_exists: true
 
+  # Classic cluster, required for Classic Compute sources
   clusters:
     live_validator_cluster:
       cluster_name: live-validator
@@ -68,6 +90,22 @@ resources:
       enable_local_disk_encryption: false
       data_security_mode: USER_ISOLATION
       runtime_engine: PHOTON
+
+  # Required for Serverless: catalog for temp results
+  catalogs:
+    live_validator_data:
+      name: live_validator_data
+      comment: "Store LiveValidator information as Delta"
+      grants:
+        - principal: account users
+          privileges:
+            - USE_CATALOG 
+            - SELECT 
+  schemas:
+    entities:
+      name: entities
+      catalog_name: ${resources.catalogs.live_validator_data.name}
+      comment: "Store point-in-time entity data"
 
 targets:
 
