@@ -4,7 +4,7 @@ def teradata_columns(host: str, un: str, pw: str, schema: str, tbl: str) -> list
 
     schema, tbl = schema.upper(), tbl.upper()
     
-    with teradatasql.connect(host=host, user=un, password=pw) as conn:
+    with teradatasql.connect(host=host, user=un, password=pw, SSLMode="Allow") as conn:
         with conn.cursor() as cur:
             # Get full column names from table metadata (HELP COLUMN truncates names)
             cur.execute(f"SELECT TOP 1 * FROM {schema}.{tbl}")

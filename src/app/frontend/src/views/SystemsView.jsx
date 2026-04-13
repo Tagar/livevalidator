@@ -33,7 +33,17 @@ export function SystemsView({
             const showDatabase = ['Postgres', 'SQLServer', 'MySQL', 'Netezza', 'Oracle'].includes(row.kind);
             return (
               <div key={row.id} className="bg-charcoal-500 border border-charcoal-200 rounded-lg p-4">
-                <h3 className="text-lg font-semibold text-rust-light mb-2">{row.name}</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-semibold text-rust-light">{row.name}</h3>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    row.compute_mode === 'require_serverless' ? 'bg-green-900/50 text-green-300 border border-green-700' :
+                    row.compute_mode === 'prefer_serverless' ? 'bg-blue-900/50 text-blue-300 border border-blue-700' :
+                    'bg-gray-800 text-gray-400 border border-gray-600'
+                  }`}>
+                    {row.compute_mode === 'require_serverless' ? 'Serverless' :
+                     row.compute_mode === 'prefer_serverless' ? 'Prefer Serverless' : 'Classic'}
+                  </span>
+                </div>
                 <p className="text-gray-400 text-sm mb-1"><strong>Type:</strong> {row.kind}</p>
                 
                 {isDatabricks ? (
@@ -42,6 +52,11 @@ export function SystemsView({
                 ) : (
                   /* Other systems: Show connection details */
                   <>
+                    <p className="text-gray-400 text-sm mb-1"><strong>JDBC Method:</strong> {
+                      row.jdbc_method === 'direct' ? 'Direct' :
+                      row.jdbc_method === 'uc_jdbc_connection' ? 'UC JDBC Connection' : 'UC Connection'
+                    }</p>
+                    {row.uc_connection_name && <p className="text-gray-400 text-sm mb-1"><strong>UC Connection:</strong> {row.uc_connection_name}</p>}
                     {row.host && <p className="text-gray-400 text-sm mb-1"><strong>Host:</strong> {row.host}</p>}
                     {row.port && <p className="text-gray-400 text-sm mb-1"><strong>Port:</strong> {row.port}</p>}
                     {showDatabase && row.database && <p className="text-gray-400 text-sm mb-1"><strong>{isOracle ? 'Service Name' : 'Database'}:</strong> {row.database}</p>}
@@ -75,6 +90,13 @@ export function SystemsView({
           })}
         </div>
       )}
+      <table className="mt-6 text-xs text-gray-500">
+        <tbody>
+          <tr><td className="pr-2 py-0.5 align-middle"><span className="inline-block px-1.5 py-px rounded-full bg-green-900/50 text-green-300 border border-green-700 font-medium">Serverless</span></td><td className="py-0.5">Must run on serverless compute. Incompatible with Classic systems.</td></tr>
+          <tr><td className="pr-2 py-0.5 align-middle"><span className="inline-block px-1.5 py-px rounded-full bg-blue-900/50 text-blue-300 border border-blue-700 font-medium">Prefer Serverless</span></td><td className="py-0.5">Serverless when possible, falls back to classic if paired with a Classic system.</td></tr>
+          <tr><td className="pr-2 py-0.5 align-middle"><span className="inline-block px-1.5 py-px rounded-full bg-gray-800 text-gray-400 border border-gray-600 font-medium">Classic</span></td><td className="py-0.5">Dedicated cluster. Required for Direct JDBC connections.</td></tr>
+        </tbody>
+      </table>
     </>
   );
 }

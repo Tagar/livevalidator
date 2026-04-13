@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS control.systems (
   pass_secret_key   TEXT,
   jdbc_string       TEXT,
   driver_connector  TEXT,                          -- Custom JDBC driver class or Spark connector
+  compute_mode      TEXT NOT NULL DEFAULT 'classic',  -- 'require_serverless', 'prefer_serverless', 'classic'
+  jdbc_method       TEXT NOT NULL DEFAULT 'direct', -- 'direct', 'uc_jdbc_connection', 'uc_connection'
+  uc_connection_name TEXT,                         -- UC connection name for uc_jdbc_connection / uc_connection
   concurrency       INTEGER NOT NULL DEFAULT -1,
   max_rows          INTEGER DEFAULT NULL,              -- Max rows to pull during validation (NULL = unlimited)
   options           JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -382,3 +385,8 @@ ON CONFLICT (scope, COALESCE(scope_id, -1)) DO NOTHING;
 -- 3) Add pk_vetted column to datasets and compare_queries
 ALTER TABLE control.datasets ADD COLUMN IF NOT EXISTS pk_vetted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE control.compare_queries ADD COLUMN IF NOT EXISTS pk_vetted BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- 4) Add serverless compute and JDBC method columns to systems
+ALTER TABLE control.systems ADD COLUMN IF NOT EXISTS compute_mode TEXT NOT NULL DEFAULT 'classic';
+ALTER TABLE control.systems ADD COLUMN IF NOT EXISTS jdbc_method TEXT NOT NULL DEFAULT 'direct';
+ALTER TABLE control.systems ADD COLUMN IF NOT EXISTS uc_connection_name TEXT;

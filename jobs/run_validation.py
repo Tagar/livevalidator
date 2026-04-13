@@ -9,7 +9,7 @@ import json
 import traceback
 from datetime import datetime, UTC
 from collections.abc import Callable
-from pyspark.sql import DataFrame, Row
+from pyspark.sql import DataFrame, Row, SparkSession
 from pyspark.sql.functions import col, xxhash64
 from pyspark import StorageLevel
 from databricks.sdk.runtime import dbutils
@@ -135,6 +135,17 @@ def exclude_cols(df: DataFrame, exclude: list[str]) -> DataFrame:
 # COMMAND ----------
 # DBTITLE 1,Row-Level Validation Functions
 
+def persist_obj(obj: DataFrame, name: str, suffix: str) -> DataFrame:
+    """Cache a DataFrame in the LiveValidator data catalog"""
+
+    if not os.environ.get("IS_SERVERLESS"):
+        return obj.persist(StorageLevel.MEMORY_AND_DISK)
+
+    spark: SparkSession = SparkSession.getActiveSession()
+    persisted_name: str = f"live_validator_data.entities.{name.replace('.', '__')}__{suffix}"
+    obj.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(persisted_name)        
+    return spark.read.table(persisted_name)
+
 def run_except_all(src_df: DataFrame, tgt_df: DataFrame) -> DataFrame:
     """Find rows in source not in target using EXCEPT ALL"""
     return src_df.exceptAll(tgt_df)
@@ -174,16 +185,24 @@ def validate_rows(src_df: DataFrame, tgt_df: DataFrame, mode: str, row_count_mat
     # Try unicode downgrade if enabled
     if downgrade_unicode_enabled:
         print(f"Found {diff_count} mismatches, retrying with unicode downgraded...")
-        src_df = downgrade_unicode(src_df, replace_special_char, extra_replace_regex).persist(StorageLevel.MEMORY_AND_DISK)
-        tgt_df = downgrade_unicode(tgt_df, replace_special_char, extra_replace_regex).persist(StorageLevel.MEMORY_AND_DISK)
-        diff_df = comparison_func(src_df, tgt_df).persist(StorageLevel.MEMORY_AND_DISK)
+        src_df = downgrade_unicode(src_df, replace_special_char, extra_replace_regex)
+        tgt_df = downgrade_unicode(tgt_df, replace_special_char, extra_replace_regex)
+
+        # persist source and target data to avoid recomputation
+        src_df = persist_obj(src_df, name, "src")
+        tgt_df = persist_obj(tgt_df, name, "tgt")
+
+        # compare and persist
+        diff_df = comparison_func(src_df, tgt_df)
+        diff_df = persist_obj(diff_df, name, "diff")
         diff_count = diff_df.count()
         
         if diff_count == 0:
             return {"rows_different": 0, "sample_differences": []}
     
     print(f"Found {diff_count} differences, extracting sample")
-    sample_df: DataFrame = diff_df.limit(max_sample_rows).persist()
+    sample_df: DataFrame = diff_df.limit(max_sample_rows)
+    sample_df = persist_obj(sample_df, name, "samples")
     
     sample_dicts: list[dict] = [row.asDict() for row in sample_df.collect()]
     
@@ -266,8 +285,12 @@ try:
     if tgt_conn["system"]["max_rows"]:
         print(f"Ignoring target system max row limit of '{tgt_conn['system']['max_rows']}', can only be applied to source system...")
     
-    src_df = exclude_cols(src_df, exclude_columns).persist(StorageLevel.MEMORY_AND_DISK)
-    tgt_df = exclude_cols(tgt_df, exclude_columns).persist(StorageLevel.MEMORY_AND_DISK)
+    src_df = exclude_cols(src_df, exclude_columns)
+    tgt_df = exclude_cols(tgt_df, exclude_columns)
+    
+    # persist to avoid re-pulling data which could have changed
+    src_df = persist_obj(src_df, name, "src")
+    tgt_df = persist_obj(tgt_df, name, "tgt")
 
     # Step 6: Row-level validation (only if counts match and not skipped)
     if (count_result["row_count_match"] or compare_mode == "primary_key") and not skip_row_validation:
@@ -336,12 +359,10 @@ if serde_result.get('src_df'):
 history_response: dict = client.api_call("POST", "/api/validation-history", serde_result)
 
 if result["status"] == "succeeded":
-    src_df.unpersist(), tgt_df.unpersist()
     dbutils.notebook.exit("Validation passed")
 
 history_id: int | None = history_response.get("id") if history_response else None
 if not history_id:
-    src_df.unpersist(), tgt_df.unpersist()
     dbutils.notebook.exit("Finished")
 
 # COMMAND ----------

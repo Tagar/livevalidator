@@ -36,11 +36,19 @@ def run_except_all_count_analysis(result: dict) -> dict | None:
 
     # Compute diffs if needed
     if not row_count_match and src_tgt_diff_df is None:
-        src_tgt_diff_df = src_df.exceptAll(tgt_df).cache()
+        src_tgt_diff_df = src_df.exceptAll(tgt_df)
+        if not os.environ.get("IS_SERVERLESS"):
+            src_tgt_diff_df.localCheckpoint(eager=True)
+        else:
+            src_tgt_diff_df.cache()
         in_src_not_tgt_count = src_tgt_diff_df.count()
         in_src_not_tgt_samples = [r.asDict() for r in src_tgt_diff_df.limit(10).collect()]
 
-    tgt_src_diff_df = tgt_df.exceptAll(src_df).cache()
+    tgt_src_diff_df = tgt_df.exceptAll(src_df).localCheckpoint(eager=True)
+    if not os.environ.get("IS_SERVERLESS"):
+        tgt_src_diff_df.localCheckpoint(eager=True)
+    else:
+        tgt_src_diff_df.cache()
     in_tgt_not_src_count = tgt_src_diff_df.count()
     in_tgt_not_src_samples = [r.asDict() for r in tgt_src_diff_df.limit(10).collect()]
 
@@ -49,10 +57,11 @@ def run_except_all_count_analysis(result: dict) -> dict | None:
         summarize_df(src_tgt_diff_df, []),
         summarize_df(tgt_src_diff_df, [])
     )
-
-    src_tgt_diff_df.unpersist()
-    tgt_src_diff_df.unpersist()
-    src_df.unpersist(), tgt_df.unpersist()
+    if not os.environ.get("IS_SERVERLESS"):
+        src_tgt_diff_df.unpersist()
+        tgt_src_diff_df.unpersist()
+        src_df.unpersist()
+        tgt_df.unpersist()
 
     return {
         "mode": "row_count_mismatch_except_all",

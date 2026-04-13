@@ -42,9 +42,10 @@ class SystemsService:
             """
             INSERT INTO control.systems (
               name, kind, catalog, host, port, database, secret_scope, user_secret_key, pass_secret_key, jdbc_string, driver_connector,
+              compute_mode, jdbc_method, uc_connection_name,
               concurrency, max_rows, options, is_active, created_by, updated_by
             ) VALUES (
-              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, $12,$13,$14,$15,$16,$16
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19
             ) RETURNING *
         """,
             data["name"],
@@ -58,6 +59,9 @@ class SystemsService:
             data.get("pass_secret_key", "").strip() if data.get("pass_secret_key") else None,
             data.get("jdbc_string", "").strip() if data.get("jdbc_string") else None,
             data.get("driver_connector", "").strip() if data.get("driver_connector") else None,
+            data.get("compute_mode", "prefer_serverless"),
+            data.get("jdbc_method", "uc_jdbc_connection"),
+            data.get("uc_connection_name", "").strip() if data.get("uc_connection_name") else None,
             data.get("concurrency", -1),
             data.get("max_rows"),
             json.dumps(data.get("options", {})),
@@ -82,14 +86,17 @@ class SystemsService:
               pass_secret_key = COALESCE($10, pass_secret_key),
               jdbc_string = COALESCE($11, jdbc_string),
               driver_connector = COALESCE($12, driver_connector),
-              concurrency = COALESCE($13, concurrency),
-              max_rows = COALESCE($14, max_rows),
-              options = COALESCE($15, options),
-              is_active = COALESCE($16, is_active),
-              updated_by = $17,
+              compute_mode = COALESCE($13, compute_mode),
+              jdbc_method = COALESCE($14, jdbc_method),
+              uc_connection_name = $15,
+              concurrency = COALESCE($16, concurrency),
+              max_rows = COALESCE($17, max_rows),
+              options = COALESCE($18, options),
+              is_active = COALESCE($19, is_active),
+              updated_by = $20,
               updated_at = now(),
               version = version + 1
-            WHERE id=$1 AND version=$18
+            WHERE id=$1 AND version=$21
             RETURNING *
         """,
             system_id,
@@ -104,6 +111,9 @@ class SystemsService:
             data.get("pass_secret_key"),
             data.get("jdbc_string"),
             data.get("driver_connector"),
+            data.get("compute_mode"),
+            data.get("jdbc_method"),
+            data.get("uc_connection_name", "").strip() if data.get("uc_connection_name") else None,
             data.get("concurrency"),
             data.get("max_rows"),
             json.dumps(data["options"]) if data.get("options") else None,

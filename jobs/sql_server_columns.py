@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 from collections.abc import Callable
@@ -7,12 +9,10 @@ from pyspark.sql import DataFrame
 _jobs_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.path.abspath(".")
 sys.path.insert(0, _jobs_dir)
 
-from models import PartitionInfo
+from jdbc_reader import PartitionInfo
 
 
-def sqlserver_partition_info(
-    conn: dict, table: str, query_fn: Callable[[dict, str], DataFrame]
-) -> PartitionInfo | None:
+def sqlserver_partition_info(table: str, query_fn: Callable[[str], DataFrame]) -> PartitionInfo | None:
     """Auto-detect a partition column from SQL Server's clustered index or PK.
 
     Returns a PartitionInfo object or None if no suitable column is
@@ -42,7 +42,7 @@ def sqlserver_partition_info(
         ORDER BY i.is_primary_key DESC, i.type ASC
         """
 
-        rows = query_fn(conn, meta_query).collect()
+        rows = query_fn(meta_query).collect()
         if not rows:
             print("[Auto-Partition] No integer PK/clustered index found, reverting to single-connection read")
             return None
@@ -50,7 +50,7 @@ def sqlserver_partition_info(
         partition_col = rows[0]["col_name"]
         quoted = f"[{partition_col.replace(']', ']]')}]"
 
-        bounds = query_fn(conn, f"SELECT MIN({quoted}) AS lo, MAX({quoted}) AS hi FROM [{schema}].[{tbl}]").collect()[0]
+        bounds = query_fn(f"SELECT MIN({quoted}) AS lo, MAX({quoted}) AS hi FROM [{schema}].[{tbl}]").collect()[0]
 
         if bounds["lo"] is None or bounds["hi"] is None:
             print("[Auto-Partition] No integer PK/clustered index found, reverting to single-connection read")

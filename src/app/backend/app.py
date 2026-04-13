@@ -86,6 +86,18 @@ async def handle_undefined_table(request: Request, exc: asyncpg.exceptions.Undef
     )
 
 
+@app.exception_handler(asyncpg.exceptions.UndefinedColumnError)
+async def handle_undefined_column(request: Request, exc: asyncpg.exceptions.UndefinedColumnError):
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Database schema update required",
+            "action": "setup_required",
+            "message": f"Schema update needed: {exc}. Please go to the Setup tab and click 'Initialize Database' to apply migrations (no data will be lost).",
+        },
+    )
+
+
 @app.exception_handler(asyncpg.exceptions.UndefinedObjectError)
 async def handle_undefined_object(request: Request, exc: asyncpg.exceptions.UndefinedObjectError):
     return JSONResponse(

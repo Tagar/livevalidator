@@ -218,6 +218,9 @@ class SystemIn(BaseModel):
     pass_secret_key: str | None = None
     jdbc_string: str | None = None
     driver_connector: str | None = None
+    compute_mode: str = "prefer_serverless"
+    jdbc_method: str = "uc_jdbc_connection"
+    uc_connection_name: str | None = None
     concurrency: int = -1
     max_rows: int | None = None
     options: dict = Field(default_factory=dict)
@@ -236,6 +239,9 @@ class SystemUpdate(BaseModel):
     pass_secret_key: str | None = None
     jdbc_string: str | None = None
     driver_connector: str | None = None
+    compute_mode: str | None = None
+    jdbc_method: str | None = None
+    uc_connection_name: str | None = None
     concurrency: int | None = None
     max_rows: int | None = None
     options: dict | None = None

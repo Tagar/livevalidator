@@ -129,6 +129,8 @@ class TriggersService:
         result["watermark_expr"] = entity.get("watermark_filter", "")
         result["src_system_name"] = src_system["name"] if src_system else "unknown"
         result["tgt_system_name"] = tgt_system["name"] if tgt_system else "unknown"
+        result["src_compute_mode"] = src_system["compute_mode"] if src_system else "classic"
+        result["tgt_compute_mode"] = tgt_system["compute_mode"] if tgt_system else "classic"
         result["config_overrides"] = entity.get("config_overrides")
 
         return result
@@ -158,6 +160,15 @@ class TriggersService:
 
         return True, ""
 
+    @staticmethod
+    def resolve_compute(src_mode: str, tgt_mode: str) -> bool:
+        """Return True if serverless, False if classic. Raises on incompatible."""
+        if src_mode == "require_serverless" and tgt_mode == "classic":
+            raise HTTPException(400, "Incompatible compute: source requires serverless but target is classic")
+        if src_mode == "classic" and tgt_mode == "require_serverless":
+            raise HTTPException(400, "Incompatible compute: target requires serverless but source is classic")
+        return src_mode != "classic" and tgt_mode != "classic"
+
     async def launch_validation_job(self, trigger_id: int) -> dict:
         """Launch a Databricks validation job for the given trigger."""
         from backend.services.validation_config_service import ValidationConfigService
@@ -169,6 +180,8 @@ class TriggersService:
         config_service = ValidationConfigService(self.db)
         entity_type = "table" if enriched["entity_type"] == "table" else "compare_query"
         resolved_config = await config_service.get_effective_config(entity_type, enriched["entity_id"])
+
+        use_serverless = self.resolve_compute(enriched["src_compute_mode"], enriched["tgt_compute_mode"])
 
         is_table = enriched["entity_type"] == "table"
         params = {
@@ -189,9 +202,14 @@ class TriggersService:
             "config": json.dumps(resolved_config),
         }
 
-        job_id = self.databricks.get_validation_job_id()
-        if not job_id:
-            raise HTTPException(status_code=500, detail="VALIDATION_JOB_ID not configured")
+        if use_serverless:
+            job_id = self.databricks.get_validation_serverless_job_id()
+            if not job_id:
+                raise HTTPException(status_code=500, detail="VALIDATION_JOB_SERVERLESS_ID not configured")
+        else:
+            job_id = self.databricks.get_validation_job_id()
+            if not job_id:
+                raise HTTPException(status_code=500, detail="VALIDATION_JOB_ID not configured")
 
         try:
             run_id, run_url = self.databricks.launch_job(int(job_id), params)

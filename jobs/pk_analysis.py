@@ -126,9 +126,10 @@ def run_pk_count_analysis(result: dict) -> dict | None:
     # Samples (10 each)
     missing_in_target_samples = [r.asDict() for r in missing_in_target_full.limit(10).collect()]
     missing_in_source_samples = [r.asDict() for r in missing_in_source_full.limit(10).collect()]
-
-    src_df.unpersist(), tgt_df.unpersist()
     
+    if not os.environ.get("IS_SERVERLESS"):
+        src_df.unpersist(), tgt_df.unpersist()
+
     return {
         "mode": "row_count_mismatch",
         "skipped": False,
@@ -189,8 +190,8 @@ def run_pk_analysis(result: dict) -> dict | None:
     except Exception as e:
         print("Skipping pretty display of mismatch samples do type inference issues.")
 
-    src_df.unpersist(), tgt_df.unpersist()
-
+    if not os.environ.get("IS_SERVERLESS"):
+        src_df.unpersist(), tgt_df.unpersist()
     return {
         "mode": "primary_key",
         "pk_columns": pk_columns,

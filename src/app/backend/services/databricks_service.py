@@ -115,6 +115,18 @@ class DatabricksService:
         return os.environ.get("VALIDATION_JOB_ID")
 
     @staticmethod
+    def get_validation_serverless_job_id() -> str | None:
+        return os.environ.get("VALIDATION_JOB_SERVERLESS_ID")
+
+    @staticmethod
+    def get_test_connection_job_id() -> str | None:
+        return os.environ.get("TEST_CONNECTION_JOB_ID")
+
+    @staticmethod
+    def get_test_connection_serverless_job_id() -> str | None:
+        return os.environ.get("TEST_CONNECTION_JOB_SERVERLESS_ID")
+
+    @staticmethod
     def get_lineage_job_id() -> str | None:
         return os.environ.get("LINEAGE_JOB_ID")
 

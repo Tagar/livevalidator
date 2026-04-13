@@ -7,6 +7,12 @@ command:
 env:
   - name: VALIDATION_JOB_ID
     valueFrom: 'run-validation'
+  - name: VALIDATION_JOB_SERVERLESS_ID
+    valueFrom: 'run-validation-serverless'
+  - name: TEST_CONNECTION_JOB_ID
+    valueFrom: 'test-connection'
+  - name: TEST_CONNECTION_JOB_SERVERLESS_ID
+    valueFrom: 'test-connection-serverless'
   - name: LINEAGE_JOB_ID
     valueFrom: 'fetch-lineage'
   - name: "DB_USER"
@@ -26,6 +32,18 @@ resources:
       id: ${resources.jobs.run_validation.id}
       permission: CAN_MANAGE_RUN
   
+  - name: test-connection
+    description: "Test connection job (classic compute)"
+    job:
+      id: ${resources.jobs.test_connection.id}
+      permission: CAN_MANAGE_RUN
+
+  - name: test-connection-serverless
+    description: "Test connection job (serverless compute)"
+    job:
+      id: ${resources.jobs.test_connection_serverless.id}
+      permission: CAN_MANAGE_RUN
+
   - name: fetch-lineage
     description: "Job to fetch upstream lineage from Databricks"
     job:

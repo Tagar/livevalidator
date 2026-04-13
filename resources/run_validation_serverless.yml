@@ -1,16 +1,23 @@
 resources:
   jobs:
-    run_validation:
-      name: "[LiveValidator] ValidationRunner"
+    run_validation_serverless:
+      name: "[LiveValidator] ValidationRunner (Serverless)"
       
       tasks:
         - task_key: validate
           notebook_task:
             notebook_path: ../jobs/run_validation.py
-          timeout_seconds: 5400
+          timeout_seconds: 7200
           disable_auto_optimization: true
-          existing_cluster_id: ${resources.clusters.live_validator_cluster.id}
+          environment_key: default
       
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: ${var.serverless_version}
+            dependencies:
+              - teradatasql
+
       max_concurrent_runs: 150
       parameters:
         - name: backend_api_url
@@ -48,4 +55,4 @@ resources:
       
       tags:
         application: live-validator
-        component: validation
+        component: validation-serverless
