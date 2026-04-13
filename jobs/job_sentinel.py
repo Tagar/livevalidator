@@ -36,11 +36,15 @@ poll_interval: int = int(dbutils.widgets.get("poll_interval") or "30")
 dbutils.widgets.text("validation_job_id", "")
 validation_job_id: str = dbutils.widgets.get("validation_job_id")
 
+dbutils.widgets.text("validation_job_serverless_id", "")
+validation_job_serverless_id: str = dbutils.widgets.get("validation_job_serverless_id")
+
 client = BackendAPIClient(backend_api_url=backend_api_url)
 
 print(f"JobSentinel starting...")
 print(f"Backend: {backend_api_url}")
 print(f"Validation Job ID: {validation_job_id}")
+print(f"Validation Job ID: {validation_job_serverless_id}")
 print(f"Poll Interval: {poll_interval}s")
 
 # COMMAND ----------
@@ -207,11 +211,13 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             "config": json.dumps(config),
         }
 
-        # Launch validation job
-        print(f"Launching validation job...")
+        # Launch validation job (serverless or classic based on system compute modes)
+        use_serverless: bool = trigger.get("src_compute_mode") != "classic" and trigger.get("tgt_compute_mode") != "classic"
+        job_id: str = validation_job_serverless_id if use_serverless else validation_job_id
+        print(f"Launching validation job ({'serverless' if use_serverless else 'classic'})...")
         w: WorkspaceClient = client.get_workspace_client()
-        run = w.jobs.run_now(job_id=validation_job_id, job_parameters=params)
-        run_url: str = f"{w.config.host}/jobs/{validation_job_id}/runs/{run.run_id}"
+        run = w.jobs.run_now(job_id=job_id, job_parameters=params)
+        run_url: str = f"{w.config.host}/jobs/{job_id}/runs/{run.run_id}"
 
         print(f"Launched {trigger["name"]}: {run_url}")
 

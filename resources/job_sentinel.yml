@@ -10,6 +10,7 @@ resources:
             base_parameters:
               backend_api_url: ${resources.apps.live_validator.url}
               validation_job_id: ${resources.jobs.run_validation.id}
+              validation_job_serverless_id: ${resources.jobs.run_validation_serverless.id}
               poll_interval: "30"
           max_retries: 50
       

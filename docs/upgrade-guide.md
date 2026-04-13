@@ -13,6 +13,9 @@ This guide walks you through upgrading an existing LiveValidator deployment to s
   databricks --version  # check current
   brew upgrade databricks  # or your install method
   ```
+- **Custom JDBC on UC Compute** preview enabled in your workspace. Go to **Admin Settings → Previews**, search for "jdbc", and enable **Custom JDBC on UC Compute**. This is required for `uc_jdbc_connection` to work on serverless and standard clusters (DBR 17.3+).
+
+<img src="images/custom-jdbc-preview.png" alt="Custom JDBC on UC Compute preview toggle" width="500"/>
 
 ---
 

@@ -605,6 +605,8 @@ class TriggersService:
         result["watermark_expr"] = entity["watermark_filter"]
         result["src_system_name"] = src_source_info["name"]
         result["tgt_system_name"] = tgt_source_info["name"]
+        result["src_compute_mode"] = src_source_info["compute_mode"] if src_source_info else "classic"
+        result["tgt_compute_mode"] = tgt_source_info["compute_mode"] if tgt_source_info else "classic"
 
         return result
 

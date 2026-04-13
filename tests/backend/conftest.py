@@ -146,6 +146,7 @@ def sample_system() -> dict:
         "concurrency": -1,
         "max_rows": None,
         "options": "{}",
+        "compute_mode": "classic",
         "is_active": True,
         "created_by": "test@test.com",
         "updated_by": "test@test.com",

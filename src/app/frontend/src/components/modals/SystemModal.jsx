@@ -96,9 +96,18 @@ export function SystemModal({ system, onSave, onClose }) {
     };
   });
   
+  const savedForm = useRef(form);
   useEffect(() => {
-    if (system?.version !== undefined) setForm(f => ({ ...f, version: system.version }));
+    if (system?.version !== undefined) {
+      setForm(f => {
+        const updated = { ...f, version: system.version };
+        savedForm.current = updated;
+        return updated;
+      });
+    }
   }, [system?.version]);
+
+  const hasUnsavedChanges = JSON.stringify({ ...form, version: 0 }) !== JSON.stringify({ ...savedForm.current, version: 0 });
 
   // --- Test Connection ---
   // Each entry: { compute, run_id, run_url, state: "RUNNING"|"SUCCESS"|"FAILED", error? }
@@ -482,14 +491,21 @@ export function SystemModal({ system, onSave, onClose }) {
         <div className="border-t border-charcoal-200 px-4 py-3 flex gap-2 justify-end bg-charcoal-400">
           <button
             onClick={handleTestConnection}
-            disabled={!system?.id || testLoading || tests.some(t => t.state === 'RUNNING')}
-            title={!system?.id ? 'Apply changes first to test connectivity' : ''}
+            disabled={!system?.id || hasUnsavedChanges || testLoading || tests.some(t => t.state === 'RUNNING')}
+            title={!system?.id ? 'Apply changes first to test connectivity' : hasUnsavedChanges ? 'Apply changes before testing' : ''}
             className="px-3 py-2 bg-orange-600 text-white border-0 rounded-md cursor-pointer hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed mr-auto"
           >
             {testLoading ? 'Launching...' : 'Test Connection'}
           </button>
           <button onClick={onClose} className="px-3 py-2 bg-charcoal-700 text-gray-200 border border-charcoal-200 rounded-md cursor-pointer hover:bg-charcoal-600">Cancel</button>
-          <button disabled={teradataMissingCreds} title={teradataMissingCreds ? 'Teradata requires host and secret credentials' : ''} onClick={() => onSave(form, { close: false })} className="px-3 py-2 bg-charcoal-700 text-gray-200 border border-charcoal-200 rounded-md cursor-pointer hover:bg-charcoal-600 disabled:opacity-50 disabled:cursor-not-allowed">Apply</button>
+          <button
+            disabled={teradataMissingCreds}
+            title={teradataMissingCreds ? 'Teradata requires host and secret credentials' : ''}
+            onClick={() => onSave(form, { close: false })}
+            className={`px-3 py-2 border-0 rounded-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              hasUnsavedChanges ? 'bg-orange-600 text-white hover:bg-orange-500' : 'bg-charcoal-700 text-gray-200 border border-charcoal-200 hover:bg-charcoal-600'
+            }`}
+          >Apply</button>
           <button disabled={teradataMissingCreds} title={teradataMissingCreds ? 'Teradata requires host and secret credentials' : ''} onClick={() => onSave(form, { close: true })} className="px-3 py-2 bg-purple-600 text-gray-100 border-0 rounded-md cursor-pointer hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
         </div>
       </div>
