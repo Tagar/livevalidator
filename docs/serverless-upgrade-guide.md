@@ -136,13 +136,40 @@ databricks apps deploy live-validator -t <your-target>
 
 ---
 
-## Step 4: Verify
+## Step 4: Restart JobSentinel
 
-```bash
-databricks bundle plan -t <your-target>
-```
+The `JobSentinel` job now selects between classic and serverless validation jobs based on each system's compute mode. You must restart it to pick up the new logic.
 
-Should show `0 to add, 0 to change, 0 to delete`. If 1-2 jobs show as "update" on the first plan after migration, deploy once more — this is normal post-migration state reconciliation.
+1. In the Databricks workspace, navigate to **Workflows → Jobs** and find the `JobSentinel` job.
+2. **Cancel** any active run.
+3. **Run** the job again — it will pick up the updated notebook automatically.
+
+> If you use a scheduled trigger, no action is needed beyond cancelling the current run; the next scheduled run will use the new code.
+
+---
+
+## Step 5: Configure Systems
+
+Open each system in the LiveValidator UI and configure the new serverless settings.
+
+<img src="images/system-settings.png" alt="System settings for serverless" width="500"/>
+
+| Setting | Options | Description |
+|---|---|---|
+| **Compute Mode** | **Require Serverless** | All validations involving this system run on serverless only. Will fail if paired with a classic system. |
+| | **Prefer Serverless** | Uses serverless when available; falls back to classic if the other system requires classic. Test Connection will probe both. |
+| | **Classic** | Always uses a classic cluster. Will fail if paired with a serverless system. |
+| **JDBC Method** | **Direct JDBC** | (Classic only) Connects using a raw JDBC URL with driver, host, port, and credentials stored in Databricks secrets. Use when UC does not manage the connection. |
+| | **UC JDBC Connection** | Uses a Unity Catalog JDBC connection object. Requires the **Custom JDBC on UC Compute** preview. Specify the connection name in **UC Connection Name**. Works on serverless or classic.|
+| | **UC Connection** | Uses Unity Catalog Query Federation (`spark.sql` with the connection). Works on serverless or classic. |
+
+After updating each system, click **Apply**, then **Test Connection** to verify connectivity with the new settings.
+
+---
+
+## Step 6: Verify
+
+Run a few validations with your new settings! Reach out to Dan Z if you have an issues.
 
 ---
 
