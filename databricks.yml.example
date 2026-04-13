@@ -99,8 +99,8 @@ resources:
       grants:
         - principal: account users
           privileges:
-            - USE_CATALOG 
-            - SELECT 
+            - USE CATALOG
+            - SELECT
   schemas:
     entities:
       name: entities
@@ -149,6 +149,10 @@ targets:
                 # Required for Oracle
                 - maven:
                     coordinates: com.oracle.database.jdbc:ojdbc11:23.5.0.24.07
+          permissions:
+            - level: CAN_MANAGE
+              group_name: 1dp-migration-prd-admin
+        run_validation_serverless:
           permissions:
             - level: CAN_MANAGE
               group_name: 1dp-migration-prd-admin

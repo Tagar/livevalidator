@@ -7,7 +7,7 @@ resources:
         - task_key: validate
           notebook_task:
             notebook_path: ../jobs/run_validation.py
-          timeout_seconds: 3600
+          timeout_seconds: 5400
           disable_auto_optimization: true
           existing_cluster_id: ${resources.clusters.live_validator_cluster.id}
       

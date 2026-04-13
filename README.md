@@ -82,7 +82,7 @@ When differences are found, LiveValidator captures sample records and provides d
 
 ### Prerequisites
 - Clone this repository: `git clone https://github.com/databricks-solutions/livevalidator`
-- [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install) v0.281+ installed/updated and configured
+- [Databricks CLI](https://docs.databricks.com/aws/en/dev-tools/cli/install) v0.287+ installed/updated and configured
 - Lakehouse Apps enabled on your workspace
 - Lakebase enabled on your workspace
 - Elevated/admin privileges for the deployer

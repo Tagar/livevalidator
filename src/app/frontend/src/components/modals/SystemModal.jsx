@@ -54,6 +54,23 @@ const getJdbcPreview = (kind, host, port, database) => {
   }
 };
 
+function ErrorPopover({ error }) {
+  const [open, setOpen] = useState(false);
+  if (!error) return null;
+  return (
+    <span className="relative">
+      <button onClick={() => setOpen(!open)} className="text-red-400 hover:text-red-300 underline cursor-pointer text-xs bg-transparent border-0 p-0">
+        — Error details
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 mb-1 w-80 p-3 bg-charcoal-600 border border-red-500/40 rounded-lg shadow-xl z-50 text-xs text-red-200 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+          {error}
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function SystemModal({ system, onSave, onClose }) {
   const [form, setForm] = useState(() => {
     const initialKind = system?.kind || "Databricks";
@@ -159,7 +176,7 @@ export function SystemModal({ system, onSave, onClose }) {
   const isUcManaged = isJdbc && (form.jdbc_method === 'uc_jdbc_connection' || form.jdbc_method === 'uc_connection');
   const showDirectFields = isJdbc && !isUcManaged;
   const showJdbcOptions = isJdbc && form.jdbc_method !== 'uc_connection';
-  const showTeradataUcFields = isTeradata && isUcManaged;
+  const showTeradataCredentials = isTeradata;
   const teradataMissingCreds = isTeradata && (!form.host || !form.secret_scope || !form.user_secret_key || !form.pass_secret_key);
 
   const COMPUTE_MODES = [
@@ -285,12 +302,14 @@ export function SystemModal({ system, onSave, onClose }) {
             </div>
           )}
 
-          {/* Teradata + UC: still needs host and secrets for teradatasql column detection */}
-          {showTeradataUcFields && (
+          {/* Teradata: always needs host and secrets for teradatasql column detection */}
+          {showTeradataCredentials && (
             <div className="mb-3">
-              <div className="px-3 py-2 mb-3 bg-gradient-to-r from-amber-950/40 to-transparent border-l-2 border-amber-500 rounded-r text-xs text-amber-100/90">
-                <span className="font-semibold text-amber-300">Teradata Credentials Required</span> — The <code className="text-amber-200">teradatasql</code> Python package is used for column type detection and requires direct host access and credentials, even when using a UC connection for data reads.
-              </div>
+              {isUcManaged && (
+                <div className="px-3 py-2 mb-3 bg-gradient-to-r from-amber-950/40 to-transparent border-l-2 border-amber-500 rounded-r text-xs text-amber-100/90">
+                  <span className="font-semibold text-amber-300">Teradata Credentials Required</span> — The <code className="text-amber-200">teradatasql</code> Python package is used for column type detection and requires direct host access and credentials, even when using a UC connection for data reads.
+                </div>
+              )}
               <label className="block mb-1 font-medium text-gray-400 text-sm">Host</label>
               <input value={form.host} onChange={e=>setForm({...form, host:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
               <div className="mt-3">
@@ -333,46 +352,46 @@ export function SystemModal({ system, onSave, onClose }) {
                     </div>
                   )}
                   
-                  {/* Standard types: show host/port/database */}
-                  {showHostPort && (
+                  {/* Host/port/database — skip host for Teradata (shown in Teradata credentials block above) */}
+                  {showHostPort && !isTeradata && (
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="block mb-1 font-medium text-gray-400 text-sm">Host</label>
+                        <input value={form.host} onChange={e=>setForm({...form, host:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                      </div>
+                      <div>
+                        <label className="block mb-1 font-medium text-gray-400 text-sm">Port</label>
+                        <input type="number" value={form.port} onChange={e=>setForm({...form, port:+e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                      </div>
+                    </div>
+                  )}
+                  {showDatabase && (
+                    <div className="mb-3">
+                      <label className="block mb-1 font-medium text-gray-400 text-sm">{isOracle ? 'Service Name' : 'Database'}</label>
+                      <input value={form.database} onChange={e=>setForm({...form, database:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder={isOracle ? 'e.g., ORCL' : ''} />
+                    </div>
+                  )}
+
+                  {/* Scope/user/pass — skip for Teradata (shown in Teradata credentials block above) */}
+                  {!isTeradata && (
                     <>
+                      <div className="mb-3">
+                        <label className="block mb-1 font-medium text-gray-400 text-sm">Secret Scope</label>
+                        <input value={form.secret_scope} onChange={e=>setForm({...form, secret_scope:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="livevalidator" />
+                        <p className="text-xs text-gray-500 mt-1">Databricks secret scope name (default: livevalidator)</p>
+                      </div>
                       <div className="grid grid-cols-2 gap-3 mb-3">
                         <div>
-                          <label className="block mb-1 font-medium text-gray-400 text-sm">Host</label>
-                          <input value={form.host} onChange={e=>setForm({...form, host:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                          <label className="block mb-1 font-medium text-gray-400 text-sm">User Secret Key</label>
+                          <input value={form.user_secret_key} onChange={e=>setForm({...form, user_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="username-key" />
                         </div>
                         <div>
-                          <label className="block mb-1 font-medium text-gray-400 text-sm">Port</label>
-                          <input type="number" value={form.port} onChange={e=>setForm({...form, port:+e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                          <label className="block mb-1 font-medium text-gray-400 text-sm">Pass Secret Key</label>
+                          <input value={form.pass_secret_key} onChange={e=>setForm({...form, pass_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="password-key" />
                         </div>
                       </div>
-                      
-                      {/* Database / Service Name - Only for specific kinds */}
-                      {showDatabase && (
-                        <div className="mb-3">
-                          <label className="block mb-1 font-medium text-gray-400 text-sm">{isOracle ? 'Service Name' : 'Database'}</label>
-                          <input value={form.database} onChange={e=>setForm({...form, database:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder={isOracle ? 'e.g., ORCL' : ''} />
-                        </div>
-                      )}
                     </>
                   )}
-                  
-                  <div className="mb-3">
-                    <label className="block mb-1 font-medium text-gray-400 text-sm">Secret Scope</label>
-                    <input value={form.secret_scope} onChange={e=>setForm({...form, secret_scope:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="livevalidator" />
-                    <p className="text-xs text-gray-500 mt-1">Databricks secret scope name (default: livevalidator)</p>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <label className="block mb-1 font-medium text-gray-400 text-sm">User Secret Key</label>
-                      <input value={form.user_secret_key} onChange={e=>setForm({...form, user_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="username-key" />
-                    </div>
-                    <div>
-                      <label className="block mb-1 font-medium text-gray-400 text-sm">Pass Secret Key</label>
-                      <input value={form.pass_secret_key} onChange={e=>setForm({...form, pass_secret_key:e.target.value})} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="password-key" />
-                    </div>
-                  </div>
                 </>
               )}
               
@@ -454,7 +473,7 @@ export function SystemModal({ system, onSave, onClose }) {
                 <span className={t.state === 'SUCCESS' ? 'text-green-400' : t.state === 'FAILED' ? 'text-red-400' : 'text-gray-400'}>
                   {t.state === 'RUNNING' ? 'Running...' : t.state === 'SUCCESS' ? 'OK' : 'Failed'}
                 </span>
-                {t.error && <span className="text-red-400 truncate max-w-[200px]" title={t.error}>— {t.error}</span>}
+                <ErrorPopover error={t.error} />
                 <a href={t.run_url} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 underline ml-auto">View Run</a>
               </div>
             ))}

@@ -142,8 +142,8 @@ def persist_obj(obj: DataFrame, name: str, suffix: str) -> DataFrame:
         return obj.persist(StorageLevel.MEMORY_AND_DISK)
 
     spark: SparkSession = SparkSession.getActiveSession()
-    persisted_name: str = f"live_validator_data.entities.{name}__{suffix}"
-    obj.write.format("delta").mode("overwrite").saveAsTable(persisted_name)        
+    persisted_name: str = f"live_validator_data.entities.{name.replace('.', '__')}__{suffix}"
+    obj.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(persisted_name)        
     return spark.read.table(persisted_name)
 
 def run_except_all(src_df: DataFrame, tgt_df: DataFrame) -> DataFrame:

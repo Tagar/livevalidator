@@ -54,9 +54,31 @@ else:
 
 # COMMAND ----------
 
+if system["kind"] != "Teradata":
+    dbutils.notebook.exit("OK")
+
+# COMMAND ----------
+
+# MAGIC %pip install teradatasql -q
+
+# COMMAND ----------
+
+import teradatasql
+
+scope: str = system.get("secret_scope") or "livevalidator"
+un: str = dbutils.secrets.get(scope, system["user_secret_key"])
+pw: str = dbutils.secrets.get(scope, system["pass_secret_key"])
+
+print(f"Probing teradatasql direct connection to {system['host']}...")
+with teradatasql.connect(host=system["host"], user=un, password=pw, SSLMode="Allow") as td_conn:
+    with td_conn.cursor() as cur:
+        cur.execute("SELECT 1")
+print(f"OK — teradatasql connection to '{system['host']}' is reachable")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### Manual Debug Snippets
-# MAGIC To manually debug connectivity failures, run the relevant snippet in a notebook:
 # MAGIC
 # MAGIC **Databricks Catalog**
 # MAGIC ```python
@@ -85,4 +107,13 @@ else:
 # MAGIC **UC Connection (Query Federation)**
 # MAGIC ```python
 # MAGIC spark.sql("SELECT * FROM remote_query('<uc-connection-name>', query => 'SELECT 1')").show()
+# MAGIC ```
+# MAGIC
+# MAGIC **Teradata (teradatasql)**
+# MAGIC ```python
+# MAGIC import teradatasql
+# MAGIC with teradatasql.connect(host="<host>", user="<user>", password="<pass>", SSLMode="Allow") as conn:
+# MAGIC     with conn.cursor() as cur:
+# MAGIC         cur.execute("SELECT 1")
+# MAGIC         print(cur.fetchone())
 # MAGIC ```
