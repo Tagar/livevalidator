@@ -87,27 +87,31 @@ The direct engine uses a different state file than Terraform. **Existing deploym
 
 ### For existing deployments (you've deployed before)
 
-**2a.** Temporarily comment out the `catalogs` and `schemas` blocks you added in Step 1d. The migration runs a plan check that fails if these are present.
+**2a.** Temporarily comment out the `catalogs` and `schemas` blocks you added in Step 1d.
 
-**2b.** Run the migration:
+**2b.** Deploy with the existing Terraform engine (syncs all other changes):
 
 ```bash
-databricks bundle deployment migrate -t <your-target>
+databricks bundle deploy -t <your-target>
 ```
 
-If the plan check still fails for any reason, use:
+**2c.** Migrate the state to the direct engine:
 
 ```bash
 databricks bundle deployment migrate -t <your-target> --noplancheck
 ```
 
-**2c.** Verify — this should show no changes (or zero deletes):
+**2d.** Verify — this should show no changes (or zero deletes):
 
 ```bash
 databricks bundle plan -t <your-target>
 ```
 
-**2d.** Uncomment the `catalogs` and `schemas` blocks from Step 1d.
+**2e.** Uncomment the `catalogs` and `schemas` blocks from Step 1d, then deploy again:
+
+```bash
+databricks bundle deploy -t <your-target>
+```
 
 ### For new deployments (first time deploying)
 
