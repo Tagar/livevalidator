@@ -41,6 +41,7 @@ dbutils.widgets.text("compare_mode", "except_all")
 dbutils.widgets.text("pk_columns", "")
 dbutils.widgets.text("include_columns", "[]")
 dbutils.widgets.text("exclude_columns", "[]")
+dbutils.widgets.text("persist_catalog", "live_validator_data")
 dbutils.widgets.text("options", "")
 dbutils.widgets.text("config", "{}")
 
@@ -60,6 +61,7 @@ compare_mode: str = dbutils.widgets.get("compare_mode")
 pk_columns: list[str] = json.loads(dbutils.widgets.get("pk_columns") or "[]")
 include_columns: list[str] = json.loads(dbutils.widgets.get("include_columns") or "[]")
 exclude_columns: list[str] = json.loads(dbutils.widgets.get("exclude_columns") or "[]")
+persist_catalog: str | None = dbutils.widgets.get("persist_catalog") or None
 options: dict = json.loads(dbutils.widgets.get("options") or "{}")
 
 # sanitize column names
@@ -135,7 +137,7 @@ def exclude_cols(df: DataFrame, exclude: list[str]) -> DataFrame:
 # COMMAND ----------
 # DBTITLE 1,Row-Level Validation Functions
 
-def persist_obj(obj: DataFrame, name: str, suffix: str) -> DataFrame:
+def persist_obj(obj: DataFrame, name: str, suffix: str, catalog: str = persist_catalog) -> DataFrame:
     """Cache a DataFrame in the LiveValidator data catalog"""
 
     if not os.environ.get("IS_SERVERLESS"):
@@ -143,7 +145,7 @@ def persist_obj(obj: DataFrame, name: str, suffix: str) -> DataFrame:
 
     spark: SparkSession = SparkSession.getActiveSession()
     sanitized_name: str = name.replace('.', '__').replace(' ', '').replace('-', '_')
-    persisted_name: str = f"live_validator_data.entities.`{sanitized_name}__{suffix}`"
+    persisted_name: str = f"{catalog}.entities.`{sanitized_name}__{suffix}`"
     obj.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(persisted_name)        
     return spark.read.table(persisted_name)
 

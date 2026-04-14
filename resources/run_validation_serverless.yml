@@ -46,6 +46,8 @@ resources:
           default: ""
         - name: exclude_columns
           default: ""
+        - name: persist_catalog
+          default: ${resources.catalogs.live_validator_data.name}
         - name: options
           default: "{}"
 
