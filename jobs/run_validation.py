@@ -142,7 +142,8 @@ def persist_obj(obj: DataFrame, name: str, suffix: str) -> DataFrame:
         return obj.persist(StorageLevel.MEMORY_AND_DISK)
 
     spark: SparkSession = SparkSession.getActiveSession()
-    persisted_name: str = f"live_validator_data.entities.{name.replace('.', '__')}__{suffix}"
+    sanitized_name: str = name.replace('.', '__').replace(' ', '').replace('-', '_')
+    persisted_name: str = f"live_validator_data.entities.`{sanitized_name}__{suffix}`"
     obj.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(persisted_name)        
     return spark.read.table(persisted_name)
 
