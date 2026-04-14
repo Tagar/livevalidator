@@ -146,7 +146,11 @@ def persist_obj(obj: DataFrame, name: str, suffix: str, catalog: str = persist_c
     spark: SparkSession = SparkSession.getActiveSession()
     sanitized_name: str = name.replace('.', '__').replace(' ', '').replace('-', '_')
     persisted_name: str = f"{catalog}.entities.`{sanitized_name}__{suffix}`"
-    obj.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(persisted_name)        
+    configs: dict[str, str] = {
+        "overwriteSchema": "true",
+        "delta.feature.allowColumnDefaults": "supported"
+        }
+    obj.write.format("delta").mode("overwrite").options(**configs).saveAsTable(persisted_name)
     return spark.read.table(persisted_name)
 
 def run_except_all(src_df: DataFrame, tgt_df: DataFrame) -> DataFrame:
