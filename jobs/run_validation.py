@@ -272,11 +272,7 @@ try:
         src_conn, table=source_table, query=source_sql, watermark_expr=watermark_expr, type_mapping_func=src_xform_func
     )
     tgt_df: DataFrame = read_data(
-        tgt_conn,
-        table=target_table,
-        query=target_sql,
-        watermark_expr=watermark_expr,
-        type_mapping_func=tgt_xform_func,
+        tgt_conn, table=target_table, query=target_sql, watermark_expr=watermark_expr, type_mapping_func=tgt_xform_func
     )
     
     # Step 3: Validate schema
