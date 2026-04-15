@@ -152,7 +152,8 @@ def persist_obj(obj: DataFrame, name: str, suffix: str, catalog: str = persist_c
     persisted_name: str = f"{catalog}.entities.`{sanitized_name}__{suffix}`"
     configs: dict[str, str] = {
         "overwriteSchema": "true",
-        "delta.feature.allowColumnDefaults": "supported"
+        "delta.feature.allowColumnDefaults": "supported",
+        "delta.feature.timestampNtz": "supported"
         }
     obj.write.format("delta").mode("overwrite").options(**configs).saveAsTable(persisted_name)
     return spark.read.table(persisted_name)
