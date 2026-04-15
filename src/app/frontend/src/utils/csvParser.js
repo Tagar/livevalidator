@@ -89,7 +89,8 @@ function validateCSVData(data, type, schedules, systems) {
         });
       }
     } else if (type === 'queries') {
-      if (!row.sql) rowErrors.push(`Missing sql`);
+      const srcSqlVal = (row.src_sql || row.sql || '').trim();
+      if (!srcSqlVal) rowErrors.push(`Missing src_sql (column src_sql, or legacy sql)`);
       
       const scheduleNames = row.schedule_name ? row.schedule_name.split(',').map(s => s.trim()).filter(s => s) : [];
       for (const sn of scheduleNames) {
@@ -108,9 +109,13 @@ function validateCSVData(data, type, schedules, systems) {
       const configOverrides = parseJson(row.config_overrides, rowErrors, 'config_overrides');
       
       if (rowErrors.length === 0) {
+        const tgtRaw = row.tgt_sql != null && String(row.tgt_sql).trim() ? String(row.tgt_sql).trim() : null;
+        const { sql: _legacySql, src_sql: _s, ...rest } = row;
         validRows.push({
-          ...row,
+          ...rest,
           name: row.name || `Query ${rowNum}`,
+          src_sql: srcSqlVal,
+          tgt_sql: tgtRaw,
           is_active: parseBool(row.is_active),
           pk_columns: row.pk_columns ? row.pk_columns.split(',').map(s => s.trim()) : null,
           include_columns: row.include_columns ? row.include_columns.split(',').map(s => s.trim()) : [],

@@ -192,7 +192,9 @@ class TriggersService:
             "backend_api_url": os.environ.get("DATABRICKS_APP_URL", ""),
             "source_table": enriched.get("source_table", "") if is_table else "",
             "target_table": enriched.get("target_table", "") if is_table else "",
-            "sql": enriched.get("sql", "") if not is_table else "",
+            "source_sql": enriched.get("src_sql", "") if not is_table else "",
+            # DB tgt_sql is NULL when target uses source SQL; .get("tgt_sql","") still returns None
+            "target_sql": (enriched.get("tgt_sql") or "") if not is_table else "",
             "watermark_expr": enriched.get("watermark_expr", "") or "",
             "compare_mode": enriched.get("compare_mode", "except_all"),
             "pk_columns": json.dumps(enriched.get("pk_columns") or []),

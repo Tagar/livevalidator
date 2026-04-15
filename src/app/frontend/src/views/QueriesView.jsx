@@ -14,17 +14,17 @@ const queryConfig = {
   apiEndpoint: '/api/queries',
   filterFn: (row, search) => {
     const name = row.name?.toLowerCase() || '';
-    const sql = (row.src_sql || row.sql || '').toLowerCase();
+    const srcSql = (row.src_sql || '').toLowerCase();
     const tgtSql = (row.tgt_sql || '').toLowerCase();
-    return name.includes(search) || sql.includes(search) || tgtSql.includes(search);
+    return name.includes(search) || srcSql.includes(search) || tgtSql.includes(search);
   },
-  exportHeaders: ['name', 'sql', 'source', 'target', 'schedule_name', 'is_active', 'compare_mode', 'pk_columns', 'config_overrides', 'tags'],
+  exportHeaders: ['name', 'src_sql', 'tgt_sql', 'source', 'target', 'schedule_name', 'is_active', 'compare_mode', 'pk_columns', 'config_overrides', 'tags'],
   exportRowFn: (row, systems) => {
     const srcSystem = systems.find(s => s.id === row.src_system_id)?.name || '';
     const tgtSystem = systems.find(s => s.id === row.tgt_system_id)?.name || '';
     const configOverrides = row.config_overrides ? JSON.stringify(typeof row.config_overrides === 'string' ? JSON.parse(row.config_overrides) : row.config_overrides) : '';
     return [
-      row.name, row.sql, srcSystem, tgtSystem,
+      row.name, row.src_sql || '', row.tgt_sql || '', srcSystem, tgtSystem,
       parseArray(row.schedules).join(','),
       row.is_active ? 'true' : 'false', row.compare_mode || 'except_all',
       Array.isArray(row.pk_columns) ? row.pk_columns.join(',') : (row.pk_columns || ''),
@@ -40,7 +40,7 @@ const queryConfig = {
     { key: 'last_run', label: 'Last Run' },
     { key: 'source', label: 'Source' },
     { key: 'target', label: 'Target' },
-    { key: 'sql', label: 'SQL' },
+    { key: 'src_sql', label: 'SQL Query' },
     { key: 'compare_mode', label: 'Compare Mode' },
     { key: 'pk_columns', label: 'PK Columns' },
     { key: 'schedules', label: 'Schedules' },
@@ -77,7 +77,7 @@ function QueryRow({ row, isSelected, isHighlighted, highlightedRowRef, handleSel
           onClick={() => setExpanded(!expanded)}
           title="Click to view full query"
         >
-          <span className="text-gray-500 mr-1">{expanded ? '▼' : '▶'}</span>{row.src_sql || row.sql}
+          <span className="text-gray-500 mr-1">{expanded ? '▼' : '▶'}</span>{row.src_sql || ''}
         </td>
         <td className="px-2 py-1 text-gray-300 text-sm whitespace-nowrap">{row.compare_mode}</td>
         <td className="px-2 py-1 text-gray-300 text-sm">{row.pk_columns?.join(', ') || '-'}</td>
@@ -91,13 +91,25 @@ function QueryRow({ row, isSelected, isHighlighted, highlightedRowRef, handleSel
       </tr>
       {expanded && (
         <tr className="border-b border-charcoal-300/30 bg-charcoal-600/30">
-          <td colSpan="12" className="p-3">
-            <pre className="bg-charcoal-700/50 rounded p-2 text-sm text-gray-200 font-mono overflow-x-auto whitespace-pre-wrap break-words">
-{row.src_sql || row.sql || 'No SQL'}
-            </pre>
-            {row.tgt_sql && (
-              <pre className="bg-charcoal-700/50 rounded p-2 text-sm text-gray-200 font-mono overflow-x-auto whitespace-pre-wrap break-words mt-2">
-{row.tgt_sql}
+          <td colSpan="12" className="p-3 space-y-2">
+            {row.tgt_sql ? (
+              <>
+                <div className="flex items-start gap-2">
+                  <span className="text-sm text-gray-200 font-mono shrink-0 select-none pt-2">src:</span>
+                  <pre className="m-0 flex-1 min-w-0 rounded-md bg-charcoal-700/50 p-2 text-sm text-gray-200 font-mono overflow-x-auto whitespace-pre-wrap break-words">
+                    {row.src_sql || 'No SQL'}
+                  </pre>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-sm text-gray-200 font-mono shrink-0 select-none pt-2">tgt:</span>
+                  <pre className="m-0 flex-1 min-w-0 rounded-md bg-charcoal-700/50 p-2 text-sm text-gray-200 font-mono overflow-x-auto whitespace-pre-wrap break-words">
+                    {row.tgt_sql}
+                  </pre>
+                </div>
+              </>
+            ) : (
+              <pre className="m-0 rounded-md bg-charcoal-700/50 p-2 text-sm text-gray-200 font-mono overflow-x-auto whitespace-pre-wrap break-words">
+                {row.src_sql || 'No SQL'}
               </pre>
             )}
           </td>

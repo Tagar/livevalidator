@@ -132,12 +132,16 @@ export default function App() {
   // Check if database needs initialization, credentials missing, or schema outdated
   const allErrors = [tbl.error, qs.error, sc.error, sys.error, dashboards.error, globalConfig.error];
   const schemaDrift = !sys.loading && sys.data?.length > 0 && sys.data[0].compute_mode === undefined;
-  const schemaError = schemaDrift ? {
-    action: "setup_required",
-    detail: "Database schema update required",
-    message: "New columns are missing. Please go to the Setup tab and click 'Initialize Database' to apply migrations (no data will be lost).",
-  } : null;
-  const setupError = schemaError || allErrors.find(err => err?.action === "setup_required" || err?.action === "credentials_required");
+  const schemaError = schemaDrift
+    ? {
+        action: "setup_required",
+        detail: "Database schema update required",
+        message:
+          "New columns are missing. Please go to the Setup tab and click 'Initialize Database' to apply migrations (no data will be lost).",
+      }
+    : null;
+  const setupError =
+    schemaError || allErrors.find((err) => err?.action === "setup_required" || err?.action === "credentials_required");
   const setupRequired = !!setupError;
   
   // Modal/Edit states
@@ -148,10 +152,10 @@ export default function App() {
   const [editingSystem, setEditingSystem] = useState(null);
   const [uploadCSVType, setUploadCSVType] = useState(null);
 
-  const refreshAll = () => { 
-    tbl.refresh(); 
-    qs.refresh(); 
-    sc.refresh(); 
+  const refreshAll = () => {
+    tbl.refresh();
+    qs.refresh();
+    sc.refresh();
     sys.refresh();
   };
 

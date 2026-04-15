@@ -291,8 +291,8 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
             className="inline-flex items-center gap-1.5 bg-charcoal-500 rounded px-2 py-1 hover:bg-charcoal-400 transition-colors cursor-pointer"
             title="Click to expand/collapse SQL"
           >
-            <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">SQL</span>
-            <span className="text-gray-100 font-mono truncate max-w-xs">{(entity.sql || '—').substring(0, 60)}{(entity.sql?.length || 0) > 60 ? '…' : ''}</span>
+            <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Src SQL</span>
+            <span className="text-gray-100 font-mono truncate max-w-xs">{(entity.src_sql || '—').substring(0, 60)}{(entity.src_sql?.length || 0) > 60 ? '…' : ''}</span>
             <span className="text-gray-400 text-[10px]">{sqlExpanded ? '▲' : '▼'}</span>
           </button>
         )}
@@ -323,18 +323,33 @@ function EntityDetailView({ entity, tables, systems, schedules, onBack, onConfig
       </div>
 
       {/* Expanded SQL View */}
-      {entity._entityType !== 'table' && sqlExpanded && entity.sql && (
+      {entity._entityType !== 'table' && sqlExpanded && entity.src_sql && (
         <div className="bg-charcoal-600 border border-charcoal-300 rounded-lg p-4 mb-5">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Full SQL Query</span>
+            <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Source SQL</span>
             <button
-              onClick={() => navigator.clipboard.writeText(entity.sql)}
+              onClick={() => navigator.clipboard.writeText(entity.src_sql)}
               className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
             >
               Copy
             </button>
           </div>
-          <pre className="text-gray-100 font-mono text-sm whitespace-pre-wrap bg-charcoal-700 rounded p-3 overflow-x-auto">{entity.sql}</pre>
+          <pre className="text-gray-100 font-mono text-sm whitespace-pre-wrap bg-charcoal-700 rounded p-3 overflow-x-auto">{entity.src_sql}</pre>
+          {entity.tgt_sql && (
+            <>
+              <div className="flex items-center justify-between mb-2 mt-4">
+                <span className="text-rust-light uppercase tracking-wider text-[10px] font-medium">Target SQL</span>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(entity.tgt_sql)}
+                  className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                >
+                  Copy
+                </button>
+              </div>
+              <pre className="text-gray-100 font-mono text-sm whitespace-pre-wrap bg-charcoal-700 rounded p-3 overflow-x-auto">{entity.tgt_sql}</pre>
+            </>
+          )}
         </div>
       )}
 

@@ -49,7 +49,7 @@ class TestCreateQuery:
             "name": "new-query",
             "src_system_id": 1,
             "tgt_system_id": 2,
-            "sql": "SELECT 1",
+            "src_sql": "SELECT 1",
         })
         assert result["id"] == 1
 
@@ -61,7 +61,7 @@ class TestCreateQuery:
                 "name": "test",
                 "src_system_id": 999,
                 "tgt_system_id": 1,
-                "sql": "SELECT 1",
+                "src_sql": "SELECT 1",
             })
         assert exc_info.value.status_code == 400
 
@@ -73,7 +73,7 @@ class TestCreateQuery:
                 "name": "test",
                 "src_system_id": 1,
                 "tgt_system_id": 999,
-                "sql": "SELECT 1",
+                "src_sql": "SELECT 1",
             })
         assert exc_info.value.status_code == 400
         assert "Target system" in str(exc_info.value.detail)
@@ -90,7 +90,7 @@ class TestCreateQuery:
                 "name": "existing",
                 "src_system_id": 1,
                 "tgt_system_id": 2,
-                "sql": "SELECT 1",
+                "src_sql": "SELECT 1",
             })
         assert exc_info.value.status_code == 409
 
@@ -136,7 +136,7 @@ class TestBulkCreateQueries:
         mock_db.set_fetchrow_results(None, sample_query)
         service = EntityService(mock_db, "test@test.com", "query")
         result = await service.bulk_create(1, 2, [
-            {"sql": "SELECT 1"},
+            {"src_sql": "SELECT 1"},
         ])
         assert "created" in result
 
@@ -147,7 +147,7 @@ class TestBulkCreateQueries:
         )
         service = EntityService(mock_db, "test@test.com", "query")
         result = await service.bulk_create(1, 2, [
-            {"sql": "SELECT 1"},
+            {"src_sql": "SELECT 1"},
         ])
         assert "updated" in result
 

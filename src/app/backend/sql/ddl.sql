@@ -64,7 +64,8 @@ CREATE INDEX IF NOT EXISTS datasets_active_idx ON control.datasets (name) WHERE 
 CREATE TABLE IF NOT EXISTS control.compare_queries (
   id               BIGSERIAL PRIMARY KEY,
   name             TEXT NOT NULL UNIQUE,         -- "daily_sales_sql"
-  sql              TEXT NOT NULL,
+  src_sql          TEXT NOT NULL,
+  tgt_sql          TEXT,                          -- optional; NULL means use src_sql on target
   src_system_id    BIGINT NOT NULL REFERENCES control.systems(id),
   tgt_system_id    BIGINT NOT NULL REFERENCES control.systems(id),
 
@@ -174,7 +175,8 @@ CREATE TABLE IF NOT EXISTS control.validation_history (
   -- Validation configuration (what was run)
   source_table      TEXT,  -- For tables (schema.table format)
   target_table      TEXT,  -- For tables (schema.table format)
-  sql_query         TEXT,  -- For queries
+  src_sql_query     TEXT,  -- For queries (source side)
+  tgt_sql_query     TEXT,  -- For queries (target side; NULL if same as source)
   compare_mode      TEXT NOT NULL,
   pk_columns        TEXT[],
   exclude_columns   TEXT[],
@@ -385,6 +387,26 @@ ON CONFLICT (scope, COALESCE(scope_id, -1)) DO NOTHING;
 -- 3) Add pk_vetted column to datasets and compare_queries
 ALTER TABLE control.datasets ADD COLUMN IF NOT EXISTS pk_vetted BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE control.compare_queries ADD COLUMN IF NOT EXISTS pk_vetted BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- 3b) compare_queries: sql -> src_sql + optional tgt_sql (no IF EXISTS on RENAME COLUMN; no-op if already migrated)
+DO $migrate_cq$
+BEGIN
+  ALTER TABLE control.compare_queries RENAME COLUMN sql TO src_sql;
+EXCEPTION
+  WHEN undefined_column THEN NULL;
+END
+$migrate_cq$;
+ALTER TABLE control.compare_queries ADD COLUMN IF NOT EXISTS tgt_sql TEXT;
+
+-- 3c) validation_history: sql_query -> src_sql_query + tgt_sql_query
+DO $migrate_vh$
+BEGIN
+  ALTER TABLE control.validation_history RENAME COLUMN sql_query TO src_sql_query;
+EXCEPTION
+  WHEN undefined_column THEN NULL;
+END
+$migrate_vh$;
+ALTER TABLE control.validation_history ADD COLUMN IF NOT EXISTS tgt_sql_query TEXT;
 
 -- 4) Add serverless compute and JDBC method columns to systems
 ALTER TABLE control.systems ADD COLUMN IF NOT EXISTS compute_mode TEXT NOT NULL DEFAULT 'classic';

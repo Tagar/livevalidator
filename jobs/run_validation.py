@@ -6,24 +6,25 @@
 # COMMAND ----------
 
 import json
+import os
+import sys
 import traceback
-from datetime import datetime, UTC
 from collections.abc import Callable
+from datetime import UTC, datetime
+
+from databricks.sdk.runtime import dbutils
+from pyspark import StorageLevel
 from pyspark.sql import DataFrame, Row, SparkSession
 from pyspark.sql.functions import col, xxhash64
-from pyspark import StorageLevel
-from databricks.sdk.runtime import dbutils
 
-import sys
-import os
 _nb_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
 sys.path.insert(0, "/Workspace" + os.path.dirname(_nb_path))
 
 from backend_api_client import BackendAPIClient
-from data_reader import get_type_transformations, get_connection_info, read_data, read_count
-from transformation_options import downgrade_unicode
-from pk_analysis import run_pk_analysis, run_pk_count_analysis, null_safe_join
+from data_reader import get_connection_info, get_type_transformations, read_count, read_data
 from exceptall_analysis import run_except_all_count_analysis
+from pk_analysis import null_safe_join, run_pk_analysis, run_pk_count_analysis
+from transformation_options import downgrade_unicode
 
 # COMMAND ----------
 
@@ -35,7 +36,8 @@ dbutils.widgets.text("target_system_name", "")
 dbutils.widgets.text("backend_api_url", "")
 dbutils.widgets.text("source_table", "")
 dbutils.widgets.text("target_table", "")
-dbutils.widgets.text("sql", "")
+dbutils.widgets.text("source_sql", "")
+dbutils.widgets.text("target_sql", "")
 dbutils.widgets.text("watermark_expr", "")
 dbutils.widgets.text("compare_mode", "except_all")
 dbutils.widgets.text("pk_columns", "")
@@ -55,7 +57,9 @@ target_system_name: str = dbutils.widgets.get("target_system_name")
 backend_api_url: str = dbutils.widgets.get("backend_api_url")
 source_table: str | None = dbutils.widgets.get("source_table") or None
 target_table: str | None = dbutils.widgets.get("target_table") or None
-sql: str | None = dbutils.widgets.get("sql") or None
+source_sql: str | None = dbutils.widgets.get("source_sql") or None
+target_sql_raw: str | None = dbutils.widgets.get("target_sql") or None
+target_sql: str | None = target_sql_raw.strip() if (target_sql_raw and target_sql_raw.strip()) else source_sql
 watermark_expr: str | None = dbutils.widgets.get("watermark_expr") or None
 compare_mode: str = dbutils.widgets.get("compare_mode")
 pk_columns: list[str] = json.loads(dbutils.widgets.get("pk_columns") or "[]")
@@ -107,12 +111,12 @@ def validate_schema(src_df: DataFrame, tgt_df: DataFrame, exclude: list[str]) ->
 def validate_counts(
     src_conn: dict, tgt_conn: dict,
     src_table: str | None, tgt_table: str | None,
-    query: str | None, watermark: str | None,
-    row_count_tolerance: float
+    src_query: str | None, tgt_query: str | None, watermark: str | None,
+    row_count_tolerance: float,
 ) -> dict[str, int | bool]:
     """Compare row counts using pushed-down COUNT(*)"""
-    src_count: int = read_count(src_conn, src_table, query, watermark)
-    tgt_count: int = read_count(tgt_conn, tgt_table, query, watermark)
+    src_count: int = read_count(src_conn, src_table, src_query, watermark)
+    tgt_count: int = read_count(tgt_conn, tgt_table, tgt_query, watermark)
     match: bool = (
         abs(src_count - tgt_count) / src_count <= row_count_tolerance / 100 
         if (row_count_tolerance and src_count)
@@ -241,7 +245,8 @@ try:
         "status": "succeeded",
         "source_table": source_table,
         "target_table": target_table,
-        "sql_query": sql,
+        "src_sql_query": source_sql,
+        "tgt_sql_query": target_sql_raw.strip() if target_sql_raw and target_sql_raw.strip() else None,
         "compare_mode": compare_mode,
         "pk_columns": pk_columns,
         "exclude_columns": exclude_columns
@@ -263,8 +268,16 @@ try:
     # Step 2: Read data with type transformations
     print("Reading data...")
     src_xform_func, tgt_xform_func = get_type_transformations(src_conn["system"]["id"], tgt_conn["system"]["id"], client)
-    src_df: DataFrame = read_data(src_conn, table=source_table, query=sql, watermark_expr=watermark_expr, type_mapping_func=src_xform_func)
-    tgt_df: DataFrame = read_data(tgt_conn, table=target_table, query=sql, watermark_expr=watermark_expr, type_mapping_func=tgt_xform_func)
+    src_df: DataFrame = read_data(
+        src_conn, table=source_table, query=source_sql, watermark_expr=watermark_expr, type_mapping_func=src_xform_func
+    )
+    tgt_df: DataFrame = read_data(
+        tgt_conn,
+        table=target_table,
+        query=target_sql,
+        watermark_expr=watermark_expr,
+        type_mapping_func=tgt_xform_func,
+    )
     
     # Step 3: Validate schema
     print("Validating schema...")
@@ -274,12 +287,15 @@ try:
     # Step 4: Validate counts
     print("Validating counts...")
     count_result: dict[str, int | bool] = validate_counts(
-        src_conn, tgt_conn, 
-        source_table, target_table, 
-        sql, 
-        watermark_expr, 
-        row_count_tolerance
-        )
+        src_conn,
+        tgt_conn,
+        source_table,
+        target_table,
+        source_sql,
+        target_sql,
+        watermark_expr,
+        row_count_tolerance,
+    )
     result.update(count_result)
 
     # Step 5: Apply max_rows limit if configured

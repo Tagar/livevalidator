@@ -85,9 +85,9 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
       const row2 = ['schema_b','table_b',sched,src,tgt,'schema_b.table_b','true','primary_key','"PK_COL_A,PK_COL_B"',"\"CREATED_AT > CURRENT_DATE - INTERVAL '5' DAY\"",'"COL_X,COL_Y,COL_Z"','"{""skip_row_validation"":true}"','sample_primary'];
       csv = [headers, row1, row2].map(r => r.join(',')).join('\n');
     } else {
-      const headers = ['sql','schedule_name','source','target','name','is_active','compare_mode','pk_columns','config_overrides','tags'];
-      const row1 = ['"SELECT * FROM schema_a.table_a"',sched,src,tgt,'query_a','true','except_all','','','"sample_primary,sample_secondary"'];
-      const row2 = ['"SELECT id, name FROM schema_b.table_b WHERE CREATED_AT > CURRENT_DATE - INTERVAL \'5\' DAY"',sched,src,tgt,'query_b','true','primary_key','id','"{""skip_row_validation"":true}"','sample_primary'];
+      const headers = ['src_sql','tgt_sql','schedule_name','source','target','name','is_active','compare_mode','pk_columns','config_overrides','tags'];
+      const row1 = ['"SELECT * FROM schema_a.table_a"','',sched,src,tgt,'query_a','true','except_all','','','"sample_primary,sample_secondary"'];
+      const row2 = ['"SELECT id, name FROM schema_b.table_b WHERE CREATED_AT > CURRENT_DATE - INTERVAL \'5\' DAY"','',sched,src,tgt,'query_b','true','primary_key','id','"{""skip_row_validation"":true}"','sample_primary'];
       csv = [headers, row1, row2].map(r => r.join(',')).join('\n');
     }
     
@@ -175,7 +175,7 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
                   <div className="mb-3">
                     <p className="text-rust-light font-semibold mb-1">✅ Required Headers:</p>
                     <ul className="text-gray-300 ml-4 space-y-1">
-                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded text-purple-400">sql</code> - SQL query to execute</li>
+                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded text-purple-400">src_sql</code> - SQL run on the source system</li>
                     </ul>
                   </div>
                   <div>
@@ -190,6 +190,8 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">pk_columns</code> - Comma-separated primary key columns (used if compare_mode is 'primary_key')</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">config_overrides</code> - JSON object for config overrides (e.g., {`{"skip_row_validation":true}`})</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">tags</code> - Comma-separated tags to apply (e.g., "QUAL-8D,production")</li>
+                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">tgt_sql</code> - Optional SQL for target only; leave blank to use <code className="bg-charcoal-700 px-1 rounded">src_sql</code> on both sides</li>
+                      <li className="text-gray-500">Legacy column <code className="bg-charcoal-700 px-1 rounded">sql</code> is accepted as an alias for <code className="bg-charcoal-700 px-1 rounded">src_sql</code></li>
                     </ul>
                   </div>
                 </>
@@ -270,7 +272,7 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
           {parsed && parsed.length > 0 && errors.length === 0 && (() => {
             const knownCols = type === 'tables'
               ? ['name','src_schema','src_table','schedule_name','source','target','src_system_name','tgt_system_name','tgt_schema','tgt_table','is_active','compare_mode','pk_columns','watermark_filter','exclude_columns','config_overrides','tags']
-              : ['name','sql','schedule_name','source','target','src_system_name','tgt_system_name','is_active','compare_mode','pk_columns','config_overrides','tags'];
+              : ['name','src_sql','tgt_sql','schedule_name','source','target','src_system_name','tgt_system_name','is_active','compare_mode','pk_columns','config_overrides','tags'];
             const cols = knownCols.filter(c => parsed[0]?.hasOwnProperty(c));
             return (
               <div className="mb-6">

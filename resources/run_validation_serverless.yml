@@ -34,7 +34,9 @@ resources:
           default: ""
         - name: target_table
           default: ""
-        - name: sql
+        - name: source_sql
+          default: ""
+        - name: target_sql
           default: ""
         - name: watermark_expr
           default: ""

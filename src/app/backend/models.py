@@ -1,5 +1,6 @@
 """Pydantic models for request/response validation."""
 
+from datetime import datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -81,7 +82,8 @@ class QueryIn(BaseModel):
     name: str
     src_system_id: int
     tgt_system_id: int
-    sql: str
+    src_sql: str
+    tgt_sql: str | None = None
     compare_mode: Literal["except_all", "primary_key", "hash"] = "except_all"
     pk_columns: list[str] | None = None
     watermark_filter: str | None = None
@@ -89,19 +91,40 @@ class QueryIn(BaseModel):
     config_overrides: dict | None = None
     is_active: bool = True
 
-    @field_validator("name", "sql")
+    @field_validator("name", "src_sql")
     @classmethod
     def not_empty(cls, v: str, info) -> str:
         if not v or not v.strip():
             raise ValueError(f"{info.field_name} cannot be empty")
         return v.strip() if info.field_name == "name" else v
 
+    @field_validator("tgt_sql", mode="before")
+    @classmethod
+    def tgt_sql_empty_is_none(cls, v: object) -> str | None:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v.strip() if isinstance(v, str) else v
+
+
+class CompareQueryRow(QueryIn):
+    """Full control.compare_queries row; field names match DB columns for SELECT projection."""
+
+    id: int
+    pk_vetted: bool = False
+    lineage: dict | list | None = None
+    created_by: str
+    updated_by: str
+    created_at: datetime
+    updated_at: datetime
+    version: int
+
 
 class QueryUpdate(BaseModel):
     name: str | None = None
     src_system_id: int | None = None
     tgt_system_id: int | None = None
-    sql: str | None = None
+    src_sql: str | None = None
+    tgt_sql: str | None = None
     compare_mode: Literal["except_all", "primary_key", "hash"] | None = None
     pk_columns: list[str] | None = None
     watermark_filter: str | None = None
@@ -110,10 +133,25 @@ class QueryUpdate(BaseModel):
     is_active: bool | None = None
     version: int
 
+    @field_validator("src_sql")
+    @classmethod
+    def src_sql_not_empty_if_set(cls, v: str | None) -> str | None:
+        if v is not None and (not v or not str(v).strip()):
+            raise ValueError("src_sql cannot be empty")
+        return v.strip() if v is not None else None
+
+    @field_validator("tgt_sql", mode="before")
+    @classmethod
+    def tgt_sql_empty_is_none(cls, v: object) -> str | None:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v.strip() if isinstance(v, str) else v
+
 
 class BulkQueryItem(BaseModel):
     name: str | None = None
-    sql: str
+    src_sql: str
+    tgt_sql: str | None = None
     schedule_name: str | None = None
     compare_mode: Literal["except_all", "primary_key", "hash"] | None = "except_all"
     pk_columns: list[str] | None = None
@@ -123,6 +161,20 @@ class BulkQueryItem(BaseModel):
     tags: list[str] | None = None
     src_system_name: str | None = None
     tgt_system_name: str | None = None
+
+    @field_validator("src_sql")
+    @classmethod
+    def bulk_src_sql_not_empty(cls, v: str) -> str:
+        if not v or not str(v).strip():
+            raise ValueError("src_sql cannot be empty")
+        return v.strip()
+
+    @field_validator("tgt_sql", mode="before")
+    @classmethod
+    def bulk_tgt_sql_empty_is_none(cls, v: object) -> str | None:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v.strip() if isinstance(v, str) else v
 
 
 class BulkQueryRequest(BaseModel):
