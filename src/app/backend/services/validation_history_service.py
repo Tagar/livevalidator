@@ -326,7 +326,7 @@ class ValidationHistoryService:
                 started_at, finished_at,
                 source_system_id, target_system_id,
                 source_system_name, target_system_name,
-                source_table, target_table, sql_query,
+                source_table, target_table, src_sql_query, tgt_sql_query,
                 compare_mode, pk_columns, exclude_columns,
                 status, schema_match, schema_details,
                 row_count_source, row_count_target, row_count_match,
@@ -337,7 +337,7 @@ class ValidationHistoryService:
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                 $21, $22, $23, $24, $25, $26, $27, $28, $29,
-                $30, $31, $32, $33, $34, $35
+                $30, $31, $32, $33, $34, $35, $36
             ) RETURNING id
         """,
             data["trigger_id"],
@@ -356,7 +356,8 @@ class ValidationHistoryService:
             data["target_system_name"],
             data.get("source_table"),
             data.get("target_table"),
-            data.get("sql_query"),
+            data.get("src_sql_query"),
+            data.get("tgt_sql_query"),
             data["compare_mode"],
             data.get("pk_columns"),
             data.get("exclude_columns"),

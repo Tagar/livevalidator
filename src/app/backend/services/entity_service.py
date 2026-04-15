@@ -8,13 +8,18 @@ from typing import TYPE_CHECKING, Any, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from backend.models import QueryIn, QueryUpdate, TableIn, TableUpdate
+from backend.models import CompareQueryRow, QueryIn, QueryUpdate, TableIn, TableUpdate
 from backend.utils import raise_version_conflict
 
 if TYPE_CHECKING:
     from backend.dependencies import DBSession
 
 EntityType = Literal["table", "query"]
+
+
+def _compare_queries_select_expr(alias: str) -> str:
+    """Project compare_queries columns from CompareQueryRow so missing DDL fails loudly."""
+    return ", ".join(f"{alias}.{name}" for name in CompareQueryRow.model_fields)
 
 
 class EntityService:
@@ -36,6 +41,8 @@ class EntityService:
         field = model.model_fields[key]
         default = field.default_factory() if field.default_factory else field.default
         val = data.get(key, default)
+        if key == "tgt_sql" and isinstance(val, str) and not val.strip():
+            val = None
         if key in ("options", "config_overrides") and isinstance(val, (dict, list)):
             val = json.dumps(val)
         return val
@@ -89,8 +96,9 @@ class EntityService:
     async def list(self, search: str | None = None) -> list[dict]:
         """List entities with last run status, tags, and schedules."""
         where = "WHERE e.name ILIKE $1" if search else ""
+        entity_select = _compare_queries_select_expr("e") if self.entity_type == "query" else "e.*"
         sql = f"""
-            SELECT e.*,
+            SELECT {entity_select},
                 vh.id as last_run_id, vh.status as last_run_status,
                 vh.finished_at as last_run_timestamp, vh.error_message as last_run_error,
                 vh.row_count_match as last_run_row_count_match, vh.rows_different as last_run_rows_different,
@@ -122,7 +130,11 @@ class EntityService:
 
     async def get(self, entity_id: int) -> dict:
         """Get entity by ID."""
-        row = await self.db.fetchrow(f"SELECT * FROM {self.db_table} WHERE id=$1", entity_id)
+        if self.entity_type == "query":
+            cols = ", ".join(CompareQueryRow.model_fields)
+            row = await self.db.fetchrow(f"SELECT {cols} FROM {self.db_table} WHERE id=$1", entity_id)
+        else:
+            row = await self.db.fetchrow(f"SELECT * FROM {self.db_table} WHERE id=$1", entity_id)
         if not row:
             raise HTTPException(404, "not found")
         return row
@@ -145,17 +157,38 @@ class EntityService:
         if data.get("tgt_system_id"):
             await self._require_system(data["tgt_system_id"], "Target")
 
-        row = await self.db.fetchrow(
-            self._build_update_sql(),
-            entity_id,
-            *self._get_values(data, self.update_model),
-            self.user_email,
-            data["version"],
-        )
+        if self.entity_type == "query":
+            row = await self._update_query(entity_id, data)
+        else:
+            row = await self.db.fetchrow(
+                self._build_update_sql(),
+                entity_id,
+                *self._get_values(data, self.update_model),
+                self.user_email,
+                data["version"],
+            )
         if not row:
             current = await self.db.fetchrow(f"SELECT * FROM {self.db_table} WHERE id=$1", entity_id)
             raise_version_conflict(current)
         return row
+
+    async def _update_query(self, entity_id: int, data: dict) -> dict | None:
+        sets: list[str] = []
+        vals: list[Any] = []
+        p = 2
+        for col in self.columns:
+            v = self._get_value(data, col, self.update_model)
+            if col == "tgt_sql" and "tgt_sql" in data:
+                sets.append(f"{col}=${p}")
+                vals.append(v)
+            else:
+                sets.append(f"{col}=COALESCE(${p},{col})")
+                vals.append(v)
+            p += 1
+        n = len(self.columns)
+        sets += [f"updated_by=${n + 2}", "updated_at=now()", "version=version+1"]
+        sql = f"UPDATE {self.db_table} SET {', '.join(sets)} WHERE id=$1 AND version=${n + 3} RETURNING *"
+        return await self.db.fetchrow(sql, entity_id, *vals, self.user_email, data["version"])
 
     async def delete(self, entity_id: int) -> dict:
         """Delete entity."""

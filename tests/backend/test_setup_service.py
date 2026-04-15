@@ -1,7 +1,7 @@
 """Tests for backend/services/setup_service.py."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException

@@ -10,7 +10,8 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
     name: query?.name || "",
     src_system_id: query?.src_system_id || (systems[0]?.id || 1),
     tgt_system_id: query?.tgt_system_id || (systems[1]?.id || 2),
-    sql: query?.src_sql || query?.sql || "SELECT 1",
+    src_sql: query?.src_sql || "SELECT 1",
+    tgt_sql: query?.tgt_sql || "",
     compare_mode: query?.compare_mode || "except_all",
     pk_columns: query?.pk_columns || [],
     watermark_filter: query?.watermark_filter || "",
@@ -23,7 +24,14 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
   const [selectedSchedules, setSelectedSchedules] = useState([]);
   const [tags, setTags] = useState([]);
   const [allTags, setAllTags] = useState([]);
-  
+  const hasTargetSql = Boolean(form.tgt_sql?.trim());
+  const [targetSqlExpanded, setTargetSqlExpanded] = useState(() => Boolean((query?.tgt_sql || '').trim()));
+  const showTargetSqlEditor = hasTargetSql || targetSqlExpanded;
+
+  useEffect(() => {
+    setTargetSqlExpanded(Boolean((query?.tgt_sql || '').trim()));
+  }, [query?.id]);
+
   // Fetch existing bindings and tags for this query
   useEffect(() => {
     if (query?.id) {
@@ -55,7 +63,11 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
     setSaving(true);
     
     try {
-      await onSave(form, selectedSchedules, tags);
+      const payload = {
+        ...form,
+        tgt_sql: form.tgt_sql?.trim() ? form.tgt_sql.trim() : null,
+      };
+      await onSave(payload, selectedSchedules, tags);
     } catch (err) {
       const errorMessages = [];
       if (err.response) {
@@ -111,7 +123,7 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
       <div onClick={(e)=>e.stopPropagation()} className="bg-charcoal-500 rounded-xl w-full max-w-4xl shadow-2xl border border-charcoal-200">
         <div className="border-b border-charcoal-200 px-6 py-4 bg-charcoal-400">
           <h3 className="m-0 text-rust text-xl font-bold">{query ? "Edit Compare Query" : "New Compare Query"}</h3>
-          <p className="text-gray-400 text-sm mt-1 mb-0">Configure a SQL query to compare data between two systems</p>
+          <p className="text-gray-400 text-sm mt-1 mb-0">Configure SQL to compare data between two systems</p>
         </div>
         <div className="p-6 max-h-[75vh] overflow-y-auto">
           {/* Error Display */}
@@ -156,11 +168,58 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
 
           {/* SQL Query Section */}
           <div className="mb-6 pb-6 border-b border-charcoal-200">
-            <h4 className="text-rust-light font-semibold mb-3 text-base">SQL Query</h4>
+            <h4 className="text-rust-light font-semibold mb-3 text-base">SQL</h4>
+            <div className="mb-4">
+              <label className="block mb-1.5 font-medium text-gray-300 text-sm">Source SQL *</label>
+              <textarea value={form.src_sql} onChange={e=>setForm({...form, src_sql:e.target.value})} rows={10} placeholder="SELECT id, name, value FROM my_table WHERE updated_at > '2024-01-01'" className="w-full px-3 py-2.5 rounded-md border border-charcoal-200 bg-charcoal-600 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
+              <p className="text-gray-500 text-xs mt-1">Runs on the source system</p>
+            </div>
             <div className="mb-2">
-              <label className="block mb-1.5 font-medium text-gray-300 text-sm">Query *</label>
-              <textarea value={form.sql} onChange={e=>setForm({...form, sql:e.target.value})} rows={12} placeholder="SELECT id, name, value FROM my_table WHERE updated_at > '2024-01-01'" className="w-full px-3 py-2.5 rounded-md border border-charcoal-200 bg-charcoal-600 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
-              <p className="text-gray-500 text-xs mt-1">💡 This query will be executed on both source and target systems</p>
+              <div
+                className={`flex items-center gap-2 ${showTargetSqlEditor ? 'mb-1.5' : 'mb-2'}`}
+              >
+                {!hasTargetSql && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetSqlExpanded((v) => !v)}
+                    className="text-gray-400 hover:text-rust-light transition-colors shrink-0"
+                    title={showTargetSqlEditor ? 'Collapse' : 'Expand'}
+                    aria-expanded={showTargetSqlEditor}
+                  >
+                    <svg
+                      className="w-5 h-5 transition-transform"
+                      style={{ transform: showTargetSqlEditor ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                )}
+                <label className="font-medium text-gray-300 text-sm mb-0">Target SQL (optional)</label>
+                {!hasTargetSql && !showTargetSqlEditor && (
+                  <span className="text-gray-500 text-xs truncate">— same query on target</span>
+                )}
+              </div>
+              {showTargetSqlEditor && (
+                <>
+                  <textarea
+                    value={form.tgt_sql}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setForm({ ...form, tgt_sql: v });
+                      if (!v.trim()) setTargetSqlExpanded(false);
+                    }}
+                    rows={8}
+                    placeholder="Leave blank to use the same query on the target system"
+                    className="w-full px-3 py-2.5 rounded-md border border-charcoal-200 bg-charcoal-600 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                  <p className="text-gray-500 text-xs mt-1">
+                    When set, runs on the target instead of source SQL. Clear the field to use source SQL on both sides.
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
@@ -192,7 +251,7 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
             <div className="mb-4">
               <label className="block mb-1.5 font-medium text-gray-300 text-sm">Watermark Filter</label>
               <input value={form.watermark_filter} onChange={e=>setForm({...form, watermark_filter:e.target.value})} placeholder="e.g., created_at > '2024-01-01' OR status = 'active'" className="w-full px-3 py-2.5 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
-              <p className="text-gray-500 text-xs mt-1">Optional WHERE clause to filter rows before comparison (appended to both source and target queries)</p>
+              <p className="text-gray-500 text-xs mt-1">Optional WHERE clause for table-mode runs (not applied to raw SQL query mode in the notebook)</p>
             </div>
           </div>
           

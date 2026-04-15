@@ -201,7 +201,8 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             "backend_api_url": backend_api_url,
             "source_table": trigger.get("source_table", "") if is_table else "",
             "target_table": trigger.get("target_table", "") if is_table else "",
-            "sql": trigger.get("sql", "") if not is_table else "",
+            "source_sql": trigger.get("src_sql", "") if not is_table else "",
+            "target_sql": (trigger.get("tgt_sql") or "") if not is_table else "",
             "watermark_expr": trigger.get("watermark_expr", "") or "",
             "compare_mode": trigger.get("compare_mode", "except_all"),
             "pk_columns": json.dumps(trigger.get("pk_columns") or []),
@@ -219,7 +220,7 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
         run = w.jobs.run_now(job_id=job_id, job_parameters=params)
         run_url: str = f"{w.config.host}/jobs/{job_id}/runs/{run.run_id}"
 
-        print(f"Launched {trigger["name"]}: {run_url}")
+        print(f"Launched {trigger['name']}: {run_url}")
 
         # Update trigger with run info
         client.api_call("PUT", f"/api/triggers/{trigger['id']}/update-run-id", {
