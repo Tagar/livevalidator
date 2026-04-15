@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 from fastapi import HTTPException
 
-from backend.utils import raise_version_conflict, serialize_row
+from backend.utils import normalize_pk_columns, raise_version_conflict, serialize_row
 
 
 class TestSerializeRow:
@@ -70,3 +70,15 @@ class TestRaiseVersionConflict:
         with pytest.raises(HTTPException) as exc_info:
             raise_version_conflict(None)
         assert exc_info.value.detail["current"] is None
+
+
+class TestNormalizePkColumns:
+    def test_empty(self):
+        assert normalize_pk_columns(None) == ()
+        assert normalize_pk_columns([]) == ()
+
+    def test_sorts_and_lowercases(self):
+        assert normalize_pk_columns(["B", "a"]) == ("a", "b")
+
+    def test_ignores_blank(self):
+        assert normalize_pk_columns([" x ", "", "  "]) == ("x",)

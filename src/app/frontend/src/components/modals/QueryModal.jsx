@@ -245,7 +245,33 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
             </div>
             <div className="mb-4">
               <label className="block mb-1.5 font-medium text-gray-300 text-sm">Primary Key Columns</label>
-              <input value={Array.isArray(form.pk_columns)?form.pk_columns.join(', '):''} onChange={e=>setForm({...form, pk_columns:e.target.value.split(',').map(s=>s.trim())})} onBlur={e=>setForm(f=>({...f, pk_columns:(Array.isArray(f.pk_columns)?f.pk_columns:e.target.value.split(',').map(s=>s.trim())).filter(Boolean)}))} placeholder="e.g., id, user_id" className="w-full px-3 py-2.5 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
+              {(() => {
+                const showVetBadge = form.compare_mode === 'primary_key' && Array.isArray(form.pk_columns) && form.pk_columns.filter(Boolean).length > 0;
+                const vetted = query?.pk_vetted;
+                return (
+                  <div
+                    className={`flex items-center gap-2 rounded-md px-2 py-1 ${
+                      showVetBadge
+                        ? vetted ? 'border-2 border-green-600/80 bg-charcoal-600/50' : 'border-2 border-amber-600/80 bg-charcoal-600/50'
+                        : 'border border-charcoal-200 bg-charcoal-400'
+                    }`}
+                    title={showVetBadge ? (vetted ? 'PK has been vetted by a validation job.' : 'Run a validation job to vet this PK. Editing PK columns resets vetted status.') : undefined}
+                  >
+                    <input
+                      value={Array.isArray(form.pk_columns) ? form.pk_columns.join(', ') : ''}
+                      onChange={(e) => setForm({ ...form, pk_columns: e.target.value.split(',').map((s) => s.trim()) })}
+                      onBlur={(e) => setForm((f) => ({ ...f, pk_columns: (Array.isArray(f.pk_columns) ? f.pk_columns : e.target.value.split(',').map((s) => s.trim())).filter(Boolean) }))}
+                      placeholder="e.g., id, user_id"
+                      className="min-w-0 flex-1 bg-transparent py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none"
+                    />
+                    {showVetBadge && (
+                      <span className={`shrink-0 text-xs font-medium ${vetted ? 'text-green-400' : 'text-amber-400'}`}>
+                        {vetted ? 'Vetted' : 'Unvetted'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
               <p className="text-gray-500 text-xs mt-1">Comma-separated list of columns that uniquely identify rows</p>
             </div>
             <div className="mb-4">

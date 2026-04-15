@@ -51,7 +51,14 @@ class BackendAPIClient:
             case _:
                 return self._serialize_value(data)
 
-    def api_call(self, method: str, endpoint: str, data: dict | None = None) -> dict:
+    def api_call(
+        self,
+        method: str,
+        endpoint: str,
+        data: dict | None = None,
+        params: dict[str, str] | None = None,
+        allow_failure: bool = False,
+    ) -> dict:
         """Call backend API with Databricks authentication. Reads backend_api_url from spark conf."""
         if self.backend_api_url is None:
             raise ValueError("backend_api_url is not set")
@@ -59,8 +66,21 @@ class BackendAPIClient:
         url: str = f"{self.backend_api_url}{endpoint}"
         headers: dict[str, str] = self.get_workspace_client().config.authenticate()
         serialized_data: dict | None = self._serialize_data(data) if data else None
-        response: requests.Response = requests.request(
-            method, url, json=serialized_data, headers=headers, timeout=30
-        )
-        response.raise_for_status()
-        return response.json()
+        use_json: bool = method.upper() != "GET" and serialized_data is not None
+        try:
+            response: requests.Response = requests.request(
+                method,
+                url,
+                json=serialized_data if use_json else None,
+                params=params,
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:
+            if allow_failure:
+                print(f"[WARNING] API call failed: {exc}")
+                return {"error": str(exc)}
+            else:
+                raise

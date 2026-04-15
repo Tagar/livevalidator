@@ -183,6 +183,20 @@ class BulkQueryRequest(BaseModel):
     items: list[BulkQueryItem]
 
 
+class EntityPkVetConfirm(BaseModel):
+    """Body for POST /api/pk-vetted/vet (Databricks job marks PK vetted after checks)."""
+
+    entity_type: Literal["table", "compare_query"]
+    entity_name: str
+
+    @field_validator("entity_name")
+    @classmethod
+    def entity_name_not_empty(cls, v: str) -> str:
+        if not v or not str(v).strip():
+            raise ValueError("entity_name cannot be empty")
+        return str(v).strip()
+
+
 # ---------- Schedules ----------
 class ScheduleIn(BaseModel):
     name: str

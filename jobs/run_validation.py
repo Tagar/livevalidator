@@ -316,13 +316,21 @@ try:
     if (count_result["row_count_match"] or compare_mode == "primary_key") and not skip_row_validation:
         # Validate PK columns exist and are unique for primary_key mode
         if compare_mode == "primary_key":
-            print(f"Vetting the primary key...")
             if not set(pk_columns).issubset(set(src_df.columns)):
                 raise ValueError(f"PK columns {pk_columns} not found in source columns {list(src_df.columns)}")
 
-            duplicate_pk: list[Row] = tgt_df.groupBy(*pk_columns).count().filter(col("count") > 1).limit(1).collect()
-            if duplicate_pk:
-                raise ValueError(f"PK not unique: {duplicate_pk[0].asDict()}")
+            # check the backend to see if this PK is vetted
+            entity_type: str = "table" if source_table else "compare_query"
+            status: dict = client.api_call(
+                "GET", "/api/pk-vetted", params={"entity_type": entity_type, "entity_name": name}, allow_failure=True
+            )
+            if not status.get("pk_vetted"):
+                print("Vetting the primary key...")
+                duplicate_pk: list[Row] = tgt_df.groupBy(*pk_columns).count().filter(col("count") > 1).limit(1).collect()
+                if duplicate_pk:
+                    raise ValueError(f"PK not unique: {duplicate_pk[0].asDict()}")
+                print("\tSuccess, updating backend...")
+                client.api_call("POST", "/api/pk-vetted/vet", {"entity_type": entity_type, "entity_name": name}, allow_failure=True)
         
         print(f"Validating rows using {compare_mode}...")
         row_result: dict = validate_rows(src_df, tgt_df, compare_mode, count_result["row_count_match"], max_sample_rows)

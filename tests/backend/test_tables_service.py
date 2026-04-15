@@ -128,6 +128,17 @@ class TestUpdateTable:
             await service.update(1, {"name": "taken", "version": 1})
         assert exc_info.value.status_code == 409
 
+    async def test_resets_pk_vetted_when_pk_columns_change(self, mock_db: MockDBSession, sample_table):
+        mock_db.set_fetchrow_results(
+            {"pk_columns": ["id"]},  # pre-update compare
+            {**sample_table, "pk_columns": ["x"], "version": 2},
+        )
+        service = EntityService(mock_db, "test@test.com", "table")
+        await service.update(1, {"pk_columns": ["x"], "version": 1})
+        executes = mock_db.get_calls("execute")
+        assert len(executes) == 1
+        assert "pk_vetted = FALSE" in executes[0][0]
+
 
 class TestDeleteTable:
     async def test_deletes_table(self, mock_db: MockDBSession):
@@ -158,6 +169,20 @@ class TestBulkCreateTables:
             {"src_schema": "s1", "src_table": "t1"},
         ])
         assert "updated" in result
+
+    async def test_bulk_update_resets_pk_vetted_when_pk_columns_change(self, mock_db: MockDBSession, sample_table):
+        mock_db.set_fetchrow_results(
+            {"id": 1, "version": 1},
+            {"pk_columns": ["old"]},
+            sample_table,
+        )
+        service = EntityService(mock_db, "test@test.com", "table")
+        result = await service.bulk_create(1, 2, [
+            {"src_schema": "s1", "src_table": "t1", "pk_columns": ["new"]},
+        ])
+        assert "updated" in result
+        update_sqls = [sql for sql, _ in mock_db.get_calls("fetchrow") if "UPDATE" in sql.upper() and "RETURNING" in sql.upper()]
+        assert any("pk_vetted = FALSE" in s for s in update_sqls)
 
 
 class TestUpdateLineage:

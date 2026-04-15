@@ -1,8 +1,23 @@
 """Shared utility functions."""
 
 from datetime import datetime
+from typing import Any
 
 from fastapi import HTTPException
+
+
+def normalize_pk_columns(cols: list[str] | list[Any] | None) -> tuple[str, ...]:
+    """Lowercase, strip, sort PK column names for stable equality (TEXT[] vs job list)."""
+    if not cols:
+        return ()
+    out: list[str] = []
+    for c in cols:
+        if c is None:
+            continue
+        s = str(c).strip().lower()
+        if s:
+            out.append(s)
+    return tuple(sorted(out))
 
 
 def serialize_row(row: dict | None) -> dict | None:
