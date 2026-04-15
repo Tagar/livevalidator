@@ -15,6 +15,7 @@ from backend.routers import (
     admin_router,
     dashboards_router,
     misc_router,
+    pk_vetted_router,
     queries_router,
     schedules_router,
     setup_router,
@@ -197,6 +198,7 @@ async def handle_foreign_key_violation(request: Request, exc: asyncpg.exceptions
 
 # ---------- Wire API Routers ----------
 app.include_router(tables_router, prefix="/api")
+app.include_router(pk_vetted_router, prefix="/api")
 app.include_router(queries_router, prefix="/api")
 app.include_router(schedules_router, prefix="/api")
 app.include_router(triggers_router, prefix="/api")

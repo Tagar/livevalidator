@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 from backend.models import CompareQueryRow, QueryIn, QueryUpdate, TableIn, TableUpdate
-from backend.utils import raise_version_conflict
+from backend.utils import normalize_pk_columns, raise_version_conflict
 
 if TYPE_CHECKING:
     from backend.dependencies import DBSession
@@ -148,6 +148,16 @@ class EntityService:
             self._build_insert_sql(), *self._get_values(data, self.create_model), self.user_email
         )
 
+    async def _reset_pk_vetted_if_pk_columns_changed(self, entity_id: int, data: dict) -> None:
+        """Clear pk_vetted when pk_columns are updated to a different normalized set."""
+        if "pk_columns" not in data:
+            return
+        row = await self.db.fetchrow(f"SELECT pk_columns FROM {self.db_table} WHERE id = $1", entity_id)
+        if row is None:
+            return
+        if normalize_pk_columns(data.get("pk_columns")) != normalize_pk_columns(row.get("pk_columns")):
+            await self.db.execute(f"UPDATE {self.db_table} SET pk_vetted = FALSE WHERE id = $1", entity_id)
+
     async def update(self, entity_id: int, data: dict) -> dict:
         """Update entity with optimistic locking."""
         if data.get("name"):
@@ -156,6 +166,8 @@ class EntityService:
             await self._require_system(data["src_system_id"], "Source")
         if data.get("tgt_system_id"):
             await self._require_system(data["tgt_system_id"], "Target")
+
+        await self._reset_pk_vetted_if_pk_columns_changed(entity_id, data)
 
         if self.entity_type == "query":
             row = await self._update_query(entity_id, data)
@@ -285,6 +297,12 @@ class EntityService:
         for i, col in enumerate(c for c in self.columns if c not in skip):
             sets.append(f"{col}=${i + 2}")
             vals.append(self._get_value(data, col, self.update_model))
+        if item.get("pk_columns") is not None:
+            current = await self.db.fetchrow(f"SELECT pk_columns FROM {self.db_table} WHERE id = $1", entity_id)
+            if current is not None and normalize_pk_columns(item.get("pk_columns")) != normalize_pk_columns(
+                current.get("pk_columns")
+            ):
+                sets.append("pk_vetted = FALSE")
         idx = len(vals) + 1
         sets += [f"updated_by=${idx}", "updated_at=now()", "version=version+1"]
         vals.append(self.user_email)

@@ -3,6 +3,7 @@
 from backend.routers.admin import router as admin_router
 from backend.routers.dashboards import router as dashboards_router
 from backend.routers.misc import router as misc_router
+from backend.routers.pk_vetted import router as pk_vetted_router
 from backend.routers.queries import router as queries_router
 from backend.routers.schedules import router as schedules_router
 from backend.routers.setup import router as setup_router
@@ -17,6 +18,7 @@ from backend.routers.validation_history import router as validation_history_rout
 __all__ = [
     "tables_router",
     "queries_router",
+    "pk_vetted_router",
     "schedules_router",
     "triggers_router",
     "systems_router",
