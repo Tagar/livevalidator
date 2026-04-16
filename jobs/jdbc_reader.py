@@ -55,6 +55,8 @@ class JDBCReader:
                     jdbc_str = f"jdbc:oracle:thin:@//{system['host']}:{system['port']}/{system['database']}"
                 case "SQLServer":
                     jdbc_str = f"jdbc:sqlserver://{system['host']}:{system['port']};databaseName={system['database']};encrypt=true;trustServerCertificate=true"
+                case "Redshift":
+                    jdbc_str = f"jdbc:redshift://{system['host']}:{system['port']}/{system['database']}"
                 case _:
                     jdbc_str = f"jdbc:{system['kind'].lower()}://{system['host']}:{system['port']}/{system['database']}"
             print(f"Generated {system['kind']} JDBC string: {jdbc_str}")

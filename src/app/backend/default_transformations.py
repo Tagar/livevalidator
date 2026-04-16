@@ -45,6 +45,17 @@ DEFAULT_TRANSFORMATIONS = {
         case _:
             return f"CAST({column_name} AS CHAR)"
 """,
+    "Redshift": """def transform_columns(column_name: str, data_type: str) -> str:
+    match data_type:
+        case 'double precision' | 'real' | 'float8' | 'float4':
+            return column_name
+        case other if 'char' in other.lower():
+            return f"RTRIM({column_name})"
+        case other if other.startswith('numeric') or other.startswith('decimal'):
+            return column_name
+        case _:
+            return f"CAST({column_name} AS TEXT)"
+""",
     "SQLServer": """def transform_columns(column_name: str, data_type: str) -> str:
     match data_type.lower():
         case 'float' | 'real':
