@@ -419,7 +419,7 @@ if compare_mode == "except_all" and history_id:
 
 # COMMAND ----------
 # Display sample PKs that mismatched
-if not result["rows_success"]:
+if result["rows_different"] == 0:
     result["sample_df"].display()
 
 # COMMAND ----------
