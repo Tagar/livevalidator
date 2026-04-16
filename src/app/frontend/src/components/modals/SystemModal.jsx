@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { apiCall } from '../../services/api';
 
-const SYSTEM_KINDS = ['Databricks', 'Netezza', 'Teradata', 'Oracle', 'Postgres', 'SQLServer', 'MySQL', 'other'];
+const SYSTEM_KINDS = ['Databricks', 'Netezza', 'Teradata', 'Oracle', 'Postgres', 'Redshift', 'SQLServer', 'MySQL', 'other'];
 
 // Helper to determine default max_rows based on system kind
 const getDefaultMaxRows = (kind) => {
@@ -18,6 +18,7 @@ const getDefaultPort = (kind) => {
     case 'MySQL': return 3306;
     case 'SQLServer': return 1433;
     case 'Netezza': return 5480;
+    case 'Redshift': return 5439;
     case 'Teradata': return 443;
     default: return 443;
   }
@@ -31,6 +32,7 @@ const getDefaultDriver = (kind) => {
     case 'MySQL': return 'com.mysql.cj.jdbc.Driver';
     case 'SQLServer': return 'com.microsoft.sqlserver.jdbc.SQLServerDriver';
     case 'Netezza': return 'org.netezza.Driver';
+    case 'Redshift': return 'com.amazon.redshift.jdbc42.Driver';
     case 'Teradata': return 'com.teradata.jdbc.TeraDriver';
     default: return '';
   }
@@ -49,6 +51,8 @@ const getJdbcPreview = (kind, host, port, database) => {
       return `jdbc:sqlserver://${h}:${p};databaseName=${d};encrypt=true;trustServerCertificate=true`;
     case 'Teradata':
       return `jdbc:teradata://${h}`;
+    case 'Redshift':
+      return `jdbc:redshift://${h}:${p}/${d}`;
     default:
       return `jdbc:${kind.toLowerCase()}://${h}:${p}/${d}`;
   }
@@ -177,8 +181,8 @@ export function SystemModal({ system, onSave, onClose }) {
   const isNetezza = form.kind === 'Netezza';
   const isTeradata = form.kind === 'Teradata';
   const needsManualDriver = isNetezza || isOther;
-  const driverNotInDBR = ['Netezza', 'Teradata', 'Oracle'].includes(form.kind);
-  const showDatabase = ['Postgres', 'SQLServer', 'MySQL', 'Netezza', 'Oracle'].includes(form.kind);
+  const driverNotInDBR = ['Netezza', 'Teradata', 'Oracle', 'Redshift'].includes(form.kind);
+  const showDatabase = ['Postgres', 'Redshift', 'SQLServer', 'MySQL', 'Netezza', 'Oracle'].includes(form.kind);
   const showHostPort = !isDatabricks && !isOther;
   const isJdbc = !isDatabricks;
   const isDirectJdbc = isJdbc && form.jdbc_method === 'direct';
