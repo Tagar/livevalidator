@@ -123,6 +123,57 @@ class TestRepairRun:
         assert result["repair_id"] == 999
         assert "run_url" in result
 
+    def test_passes_job_parameters_as_key_value_list(self):
+        mock_client = MockClient()
+        mock_run_info = MagicMock()
+        mock_run_info.repair_history = None
+        p1, p2 = MagicMock(), MagicMock()
+        p1.name, p1.value = "trigger_id", "42"
+        p2.name, p2.value = "name", "test"
+        mock_run_info.job_parameters = [p1, p2]
+
+        mock_repair = MagicMock()
+        mock_repair.response = MagicMock()
+        mock_repair.response.repair_id = 999
+        mock_updated_run = MagicMock()
+        mock_updated_run.run_page_url = "https://databricks.com/run/123"
+
+        mock_client.jobs.get_run.side_effect = [mock_run_info, mock_updated_run]
+        mock_client.jobs.repair_run.return_value = mock_repair
+
+        service = DatabricksService(mock_client)
+        service.repair_run(12345)
+
+        call_kwargs = mock_client.jobs.repair_run.call_args[1]
+        assert call_kwargs["job_parameters"] == [
+            {"key": "trigger_id", "value": "42"},
+            {"key": "name", "value": "test"},
+        ]
+
+    def test_filters_out_none_values(self):
+        mock_client = MockClient()
+        mock_run_info = MagicMock()
+        mock_run_info.repair_history = None
+        p1, p2 = MagicMock(), MagicMock()
+        p1.name, p1.value = "trigger_id", "42"
+        p2.name, p2.value = "unset_param", None
+        mock_run_info.job_parameters = [p1, p2]
+
+        mock_repair = MagicMock()
+        mock_repair.response = MagicMock()
+        mock_repair.response.repair_id = 999
+        mock_updated_run = MagicMock()
+        mock_updated_run.run_page_url = "https://databricks.com/run/123"
+
+        mock_client.jobs.get_run.side_effect = [mock_run_info, mock_updated_run]
+        mock_client.jobs.repair_run.return_value = mock_repair
+
+        service = DatabricksService(mock_client)
+        service.repair_run(12345)
+
+        call_kwargs = mock_client.jobs.repair_run.call_args[1]
+        assert call_kwargs["job_parameters"] == [{"key": "trigger_id", "value": "42"}]
+
 
 class TestStaticMethods:
     @patch.dict(os.environ, {"VALIDATION_JOB_ID": "123"})

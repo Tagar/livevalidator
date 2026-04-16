@@ -92,7 +92,9 @@ class DatabricksService:
 
         original_params = None
         if run_info.job_parameters:
-            original_params = {p.name: p.value for p in run_info.job_parameters}
+            original_params = [
+                {"key": p.name, "value": p.value} for p in run_info.job_parameters if p.value is not None
+            ]
 
         repair_waiter = client.jobs.repair_run(
             run_id=run_id,
