@@ -259,10 +259,7 @@ while True:
         # Sync Databricks run statuses — marks crashed jobs as 'failed'
         sync: dict = client.api_call("POST", "/api/triggers/sync-statuses", allow_failure=True)
         if sync.get("failed_count"):
-            print(f"Marked {sync['failed_count']} trigger(s) as failed:")
-            for rid, status in sync.get("run_statuses", {}).items():
-                if status.get("failed"):
-                    print(f"  Run {rid}: {status.get('state_message') or status.get('result_state', 'unknown')}")
+            print(f"Marked {sync['failed_count']} trigger(s) as failed")
 
         # Get running jobs per system for concurrency control (accurate after sync)
         running_per_system: dict[int, int] = client.api_call("GET", "/api/triggers/running-per-system")
