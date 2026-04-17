@@ -19,7 +19,7 @@ class BackendAPIClient:
     def get_workspace_client(self) -> WorkspaceClient:
         """Lazy initialization of WorkspaceClient singleton."""
         if self._w is None:
-            spark = SparkSession.getActiveSession()
+            spark = SparkSession.builder.getOrCreate()
             self._w = WorkspaceClient(
                 host=spark.conf.get("spark.databricks.workspaceUrl"),
                 client_id=dbutils.secrets.get(scope="livevalidator", key="lv-app-id"),
