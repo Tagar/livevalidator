@@ -33,21 +33,27 @@ class TestCheckSystemConcurrency:
 
 class TestListTriggers:
     async def test_returns_triggers(self, mock_db: MockDBSession, mock_databricks: MockDatabricksService):
-        mock_db.set_fetch_results([{
-            "id": 1,
-            "entity_type": "table",
-            "entity_id": 1,
-            "entity_name": "test.table",
-            "status": "queued",
-            "databricks_run_id": None,
-            "entity_tags": [],
-        }])
+        mock_db.set_fetch_results(
+            [],  # sync_trigger_statuses: no running triggers
+            [{
+                "id": 1,
+                "entity_type": "table",
+                "entity_id": 1,
+                "entity_name": "test.table",
+                "status": "queued",
+                "databricks_run_id": None,
+                "entity_tags": [],
+            }],
+        )
         service = TriggersService(mock_db, "test@test.com", mock_databricks)
         result = await service.list_triggers()
         assert len(result) == 1
 
     async def test_filters_by_status(self, mock_db: MockDBSession, mock_databricks: MockDatabricksService):
-        mock_db.set_fetch_results([])
+        mock_db.set_fetch_results(
+            [],  # sync_trigger_statuses: no running triggers
+            [],  # list query
+        )
         service = TriggersService(mock_db, "test@test.com", mock_databricks)
         result = await service.list_triggers(status="running")
         assert len(result) == 0

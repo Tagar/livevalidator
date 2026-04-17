@@ -231,8 +231,30 @@ class TriggersService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to launch job: {str(e)}") from e
 
+    async def sync_trigger_statuses(self) -> dict:
+        """Check Databricks for running triggers and mark crashed ones as 'failed'."""
+        rows = await self.db.fetch(
+            "SELECT id, databricks_run_id FROM control.triggers WHERE status = 'running' AND databricks_run_id IS NOT NULL"
+        )
+        if not rows:
+            return {"checked": 0, "failed_count": 0, "run_statuses": {}}
+
+        run_id_map = {int(r["databricks_run_id"]): r["id"] for r in rows}
+        run_statuses = self.databricks.get_run_statuses(list(run_id_map.keys()))
+
+        failed_trigger_ids = [run_id_map[rid] for rid, s in run_statuses.items() if s.get("failed") and s.get("done")]
+        if failed_trigger_ids:
+            await self.db.execute(
+                "UPDATE control.triggers SET status = 'failed' WHERE id = ANY($1)", failed_trigger_ids
+            )
+
+        return {"checked": len(rows), "failed_count": len(failed_trigger_ids), "run_statuses": run_statuses}
+
     async def list_triggers(self, status: str | None = None) -> list[dict]:
         """Get active triggers with optional status filter."""
+        sync_result = await self.sync_trigger_statuses()
+        run_statuses = sync_result["run_statuses"]
+
         query = """
             SELECT t.*,
                    CASE t.entity_type
@@ -259,11 +281,6 @@ class TriggersService:
         else:
             query += " ORDER BY t.status, t.priority ASC, t.id ASC"
             rows = await self.db.fetch(query)
-
-        running_run_ids = [
-            int(r["databricks_run_id"]) for r in rows if r["status"] == "running" and r.get("databricks_run_id")
-        ]
-        run_statuses = self.databricks.get_run_statuses(running_run_ids) if running_run_ids else {}
 
         results = []
         for r in rows:
@@ -536,6 +553,7 @@ class TriggersService:
             SELECT
                 COUNT(*) FILTER (WHERE status = 'queued') as queued,
                 COUNT(*) FILTER (WHERE status = 'running') as running,
+                COUNT(*) FILTER (WHERE status = 'failed') as failed,
                 COUNT(*) as total_active
             FROM control.triggers
         """)

@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS control.triggers (
   requested_by     TEXT NOT NULL,
   requested_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  status           TEXT NOT NULL DEFAULT 'queued',  -- 'queued' | 'running' (active only)
+  status           TEXT NOT NULL DEFAULT 'queued',  -- 'queued' | 'running' | 'failed' (active only)
   attempts         INTEGER NOT NULL DEFAULT 0,
   last_error       TEXT,
   worker_id        TEXT,                         -- advisory: who picked it

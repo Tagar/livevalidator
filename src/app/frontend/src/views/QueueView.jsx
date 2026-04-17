@@ -168,10 +168,9 @@ export function QueueView({
   };
 
   const handleBulkRepair = async () => {
-    // Get failed trigger IDs from selected
     const failedIds = Array.from(selectedIds).filter(id => {
       const t = triggers.data.find(tr => tr.id === id);
-      return t && t.databricks_run_status?.failed && t.databricks_run_id;
+      return t && t.status === 'failed' && t.databricks_run_id;
     });
     
     if (failedIds.length === 0) {
@@ -231,7 +230,7 @@ export function QueueView({
 
   const selectedFailedCount = Array.from(selectedIds).filter(id => {
     const t = triggers.data.find(tr => tr.id === id);
-    return t && t.databricks_run_status?.failed && t.databricks_run_id;
+    return t && t.status === 'failed' && t.databricks_run_id;
   }).length;
 
   return (
@@ -244,7 +243,7 @@ export function QueueView({
       </div>
 
       {/* Queue Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
         <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
           <div className="text-blue-400 text-sm mb-1">Queued</div>
           <div className="text-2xl font-bold text-blue-300">
@@ -255,6 +254,12 @@ export function QueueView({
           <div className="text-orange-400 text-sm mb-1">Running</div>
           <div className="text-2xl font-bold text-orange-300">
             {queueStats.data?.active?.running || 0}
+          </div>
+        </div>
+        <div className="bg-red-900/20 border border-red-700 rounded-lg p-3">
+          <div className="text-red-400 text-sm mb-1">Failed</div>
+          <div className="text-2xl font-bold text-red-300">
+            {queueStats.data?.active?.failed || 0}
           </div>
         </div>
         <div className="bg-green-900/20 border border-green-700 rounded-lg p-3">
@@ -438,7 +443,7 @@ export function QueueView({
                     const isLaunching = launching.has(trigger.id);
                     const stale = isStale(trigger);
                     const runStatus = trigger.databricks_run_status;
-                    const runFailed = runStatus?.failed;
+                    const runFailed = trigger.status === 'failed';
                     const runDone = runStatus?.done;
                     
                     return (
@@ -464,9 +469,7 @@ export function QueueView({
                             </span>
                           ) : (
                             <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                              trigger.status === 'running'
-                                ? 'bg-orange-600 text-white'
-                                : 'bg-blue-600 text-white'
+                              trigger.status === 'running' ? 'bg-orange-600 text-white' : 'bg-blue-600 text-white'
                             }`}>
                               {trigger.status === 'running' ? 'RUNNING' : 'QUEUED'}
                             </span>

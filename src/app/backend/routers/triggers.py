@@ -105,6 +105,15 @@ async def repair_trigger_run(
     return await service.repair_trigger(id)
 
 
+@router.post("/sync-statuses")
+async def sync_trigger_statuses(
+    db: DBSession = Depends(get_db),
+    user_email: str = Depends(get_current_user_email),
+):
+    service = TriggersService(db, user_email)
+    return await service.sync_trigger_statuses()
+
+
 @router.post("/bulk-repair")
 async def bulk_repair_triggers(
     body: BulkRepairRequest,
