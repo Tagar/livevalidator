@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { parseCSV } from '../../utils/csvParser';
-import { tableService, queryService } from '../../services/api';
+import { tableService, queryService, scheduleService } from '../../services/api';
 
 export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) {
   // Use first system's actual ID, no fallback to hardcoded values
@@ -79,7 +79,12 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
     const sched = schedules[0]?.name || 'SCHEDULE_NAME';
     
     let csv;
-    if (type === 'tables') {
+    if (type === 'schedules') {
+      const headers = ['name','cron_expr','timezone','enabled'];
+      const row1 = ['daily_morning','0 14 * * *','UTC','true'];
+      const row2 = ['daily_evening','0 22 * * *','UTC','true'];
+      csv = [headers, row1, row2].map(r => r.join(',')).join('\n');
+    } else if (type === 'tables') {
       const headers = ['src_schema','src_table','schedule_name','source','target','name','is_active','compare_mode','pk_columns','watermark_filter','exclude_columns','config_overrides','tags'];
       const row1 = ['schema_a','table_a',sched,src,tgt,'schema_a.table_a','true','except_all','','','"COL_A,COL_B,COL_C"','','"sample_primary,sample_secondary"'];
       const row2 = ['schema_b','table_b',sched,src,tgt,'schema_b.table_b','true','primary_key','"PK_COL_A,PK_COL_B"',"\"CREATED_AT > CURRENT_DATE - INTERVAL '5' DAY\"",'"COL_X,COL_Y,COL_Z"','"{""skip_row_validation"":true}"','sample_primary'];
@@ -103,8 +108,13 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
     
     setUploading(true);
     try {
-      const uploadFn = type === 'tables' ? tableService.bulkUpload : queryService.bulkUpload;
-      const result = await uploadFn(srcSystemId, tgtSystemId, parsed);
+      let result;
+      if (type === 'schedules') {
+        result = await scheduleService.bulkUpload(parsed);
+      } else {
+        const uploadFn = type === 'tables' ? tableService.bulkUpload : queryService.bulkUpload;
+        result = await uploadFn(srcSystemId, tgtSystemId, parsed);
+      }
       
       if (result.errors && result.errors.length > 0) {
         alert(`Upload completed with errors:\n${result.errors.map(e => `Row ${e.row}: ${e.error}`).join('\n')}`);
@@ -131,7 +141,7 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
     <div ref={backdropRef} onMouseDown={handleMouseDown} onMouseUp={handleMouseUp} className="fixed inset-0 bg-black/75 flex items-center justify-center z-50">
       <div className={`bg-charcoal-500 rounded-xl w-full ${parsed ? 'max-w-[90vw]' : 'max-w-4xl'} shadow-2xl max-h-[90vh] overflow-y-auto border border-charcoal-200`}>
         <div className="sticky top-0 bg-charcoal-500 px-6 py-4 border-b border-charcoal-200 flex justify-between items-center">
-          <h3 className="m-0 text-rust text-lg font-semibold">Upload CSV - {type === 'tables' ? 'Tables' : 'Queries'}</h3>
+          <h3 className="m-0 text-rust text-lg font-semibold">Upload CSV - {type === 'tables' ? 'Tables' : type === 'schedules' ? 'Schedules' : 'Queries'}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-200 text-2xl leading-none border-0 bg-transparent cursor-pointer">&times;</button>
         </div>
 
@@ -142,7 +152,24 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
             <div className="bg-charcoal-600 rounded-lg p-4 text-sm">
               <p className="text-gray-300 mb-3 font-medium">Your CSV file must include a header row with the following columns:</p>
               
-              {type === 'tables' ? (
+              {type === 'schedules' ? (
+                <>
+                  <div className="mb-3">
+                    <p className="text-rust-light font-semibold mb-1">Required Headers:</p>
+                    <ul className="text-gray-300 ml-4 space-y-1">
+                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded text-purple-400">name</code> - Unique schedule name</li>
+                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded text-purple-400">cron_expr</code> - Cron expression (e.g., "0 15 * * *")</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="text-rust-light font-semibold mb-1">Optional Headers:</p>
+                    <ul className="text-gray-400 ml-4 space-y-1 text-xs">
+                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">timezone</code> - IANA timezone (defaults to UTC)</li>
+                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">enabled</code> - true/false (defaults to true)</li>
+                    </ul>
+                  </div>
+                </>
+              ) : type === 'tables' ? (
                 <>
                   <div className="mb-3">
                     <p className="text-rust-light font-semibold mb-1">✅ Required Headers:</p>
@@ -208,8 +235,8 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
             </div>
           </div>
 
-          {/* Default Systems */}
-          <div className="mb-6 pb-6 border-b border-charcoal-200">
+          {/* Default Systems (not needed for schedules) */}
+          {type !== 'schedules' && <div className="mb-6 pb-6 border-b border-charcoal-200">
             <h4 className="text-rust-light font-semibold mb-3">Default Systems</h4>
             <p className="text-gray-500 text-xs mb-3">Used when CSV rows don't specify <code className="bg-charcoal-700 px-1 rounded">source</code>/<code className="bg-charcoal-700 px-1 rounded">target</code> columns</p>
             <div className="grid grid-cols-2 gap-4">
@@ -226,7 +253,7 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
                 </select>
               </div>
             </div>
-          </div>
+          </div>}
 
           {/* File Upload */}
           <div className="mb-6">
@@ -270,7 +297,9 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
 
           {/* Preview */}
           {parsed && parsed.length > 0 && errors.length === 0 && (() => {
-            const knownCols = type === 'tables'
+            const knownCols = type === 'schedules'
+              ? ['name','cron_expr','timezone','enabled']
+              : type === 'tables'
               ? ['name','src_schema','src_table','schedule_name','source','target','src_system_name','tgt_system_name','tgt_schema','tgt_table','is_active','compare_mode','pk_columns','watermark_filter','exclude_columns','config_overrides','tags']
               : ['name','src_sql','tgt_sql','schedule_name','source','target','src_system_name','tgt_system_name','is_active','compare_mode','pk_columns','config_overrides','tags'];
             const cols = knownCols.filter(c => parsed[0]?.hasOwnProperty(c));

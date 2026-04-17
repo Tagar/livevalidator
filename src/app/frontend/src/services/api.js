@@ -85,6 +85,7 @@ export const scheduleService = {
   create: (data) => apiCall("POST", "/api/schedules", data),
   update: (id, data) => apiCall("PUT", `/api/schedules/${id}`, data),
   delete: (id) => apiCall("DELETE", `/api/schedules/${id}`),
+  bulkUpload: (items) => apiCall("POST", "/api/schedules/bulk", { items }),
 };
 
 /**
