@@ -68,16 +68,21 @@ class DatabricksService:
         }
 
     def get_run_statuses(self, run_ids: list[int]) -> dict[int, dict]:
-        """Get statuses for multiple runs. Returns {run_id: status_dict}."""
+        """Get statuses for multiple runs in parallel. Returns {run_id: status_dict}."""
         if not run_ids:
             return {}
 
-        results = {}
-        for run_id in run_ids:
-            try:
-                results[run_id] = self.get_run_status(run_id)
-            except Exception as e:
-                results[run_id] = {"failed": True, "done": True, "error": str(e)}
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        results: dict[int, dict] = {}
+        with ThreadPoolExecutor(max_workers=min(25, len(run_ids))) as pool:
+            futures = {pool.submit(self.get_run_status, rid): rid for rid in run_ids}
+            for future in as_completed(futures):
+                rid = futures[future]
+                try:
+                    results[rid] = future.result()
+                except Exception as e:
+                    results[rid] = {"failed": True, "done": True, "error": str(e)}
         return results
 
     def repair_run(self, run_id: int) -> dict:
