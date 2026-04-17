@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.dependencies import DBSession, get_current_user_email, get_db
-from backend.models import ScheduleIn, ScheduleUpdate
+from backend.models import BulkScheduleRequest, ScheduleIn, ScheduleUpdate
 from backend.services.schedules_service import SchedulesService
 from backend.services.users_service import UsersService
 
@@ -27,6 +27,19 @@ async def create_schedule(
 
     service = SchedulesService(db, user_email)
     return await service.create_schedule(body.model_dump())
+
+
+@router.post("/bulk")
+async def bulk_create_schedules(
+    body: BulkScheduleRequest,
+    db: DBSession = Depends(get_db),
+    user_email: str = Depends(get_current_user_email),
+):
+    users = UsersService(db)
+    await users.require_role(user_email, "CAN_RUN", "CAN_EDIT", "CAN_MANAGE")
+
+    service = SchedulesService(db, user_email)
+    return await service.bulk_create_schedules([item.model_dump() for item in body.items])
 
 
 @router.put("/{id}")

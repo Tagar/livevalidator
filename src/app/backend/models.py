@@ -245,6 +245,28 @@ class ScheduleUpdate(BaseModel):
             ) from None
 
 
+class BulkScheduleItem(BaseModel):
+    name: str
+    cron_expr: str
+    timezone: str = "UTC"
+    enabled: bool = True
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        try:
+            ZoneInfo(v)
+            return v
+        except Exception:
+            raise ValueError(
+                f"Invalid timezone '{v}'. Must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London', 'UTC')"
+            ) from None
+
+
+class BulkScheduleRequest(BaseModel):
+    items: list[BulkScheduleItem]
+
+
 class BindingIn(BaseModel):
     schedule_id: int
     entity_type: Literal["table", "compare_query"]

@@ -104,6 +104,50 @@ class SchedulesService:
         await self.db.execute("DELETE FROM control.schedules WHERE id=$1", schedule_id)
         return {"ok": True}
 
+    async def bulk_create_schedules(self, items: list[dict]) -> dict:
+        """Bulk create/update schedules by name."""
+        results: dict = {"created": [], "updated": [], "errors": []}
+
+        for idx, item in enumerate(items):
+            try:
+                existing = await self.db.fetchrow(
+                    "SELECT id, version FROM control.schedules WHERE name=$1", item["name"]
+                )
+                if existing:
+                    row = await self.db.fetchrow(
+                        """
+                        UPDATE control.schedules SET
+                          cron_expr = $2, timezone = $3, enabled = $4,
+                          updated_by = $5, updated_at = now(), version = version + 1
+                        WHERE id=$1 RETURNING *
+                        """,
+                        existing["id"],
+                        item["cron_expr"],
+                        item.get("timezone", "UTC"),
+                        item.get("enabled", True),
+                        self.user_email,
+                    )
+                    results["updated"].append({"row": idx + 1, "name": item["name"], "data": serialize_row(row)})
+                else:
+                    row = await self.db.fetchrow(
+                        """
+                        INSERT INTO control.schedules (name, cron_expr, timezone, enabled, max_concurrency, backfill_policy, created_by, updated_by)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING *
+                        """,
+                        item["name"],
+                        item["cron_expr"],
+                        item.get("timezone", "UTC"),
+                        item.get("enabled", True),
+                        4,
+                        "none",
+                        self.user_email,
+                    )
+                    results["created"].append({"row": idx + 1, "name": item["name"], "data": serialize_row(row)})
+            except Exception as e:
+                results["errors"].append({"row": idx + 1, "error": str(e)})
+
+        return results
+
     async def create_binding(self, schedule_id: int, entity_type: str, entity_id: int) -> dict:
         """Bind a schedule to an entity."""
         id_ = await self.db.fetchval(

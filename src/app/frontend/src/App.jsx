@@ -656,6 +656,8 @@ export default function App() {
             error={sc.error}
             onEdit={setEditingSchedule}
             onDelete={handleDelete}
+            onUploadCSV={() => setUploadCSVType('schedules')}
+            onRefresh={sc.refresh}
             onClearError={sc.clearError}
             renderCell={renderCell}
           />

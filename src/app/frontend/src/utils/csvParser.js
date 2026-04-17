@@ -88,6 +88,18 @@ function validateCSVData(data, type, schedules, systems) {
           tgt_system_name: tgtSystemName,
         });
       }
+    } else if (type === 'schedules') {
+      if (!row.name) rowErrors.push(`Missing name`);
+      if (!row.cron_expr) rowErrors.push(`Missing cron_expr`);
+
+      if (rowErrors.length === 0) {
+        validRows.push({
+          name: row.name.trim(),
+          cron_expr: row.cron_expr.trim(),
+          timezone: row.timezone?.trim() || 'UTC',
+          enabled: parseBool(row.enabled),
+        });
+      }
     } else if (type === 'queries') {
       const srcSqlVal = (row.src_sql || row.sql || '').trim();
       if (!srcSqlVal) rowErrors.push(`Missing src_sql (column src_sql, or legacy sql)`);
