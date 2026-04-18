@@ -83,17 +83,34 @@ def get_column_types(conn: dict, table: str) -> list[tuple[str, str]]:
     return [(row[0], row[1]) for row in column_df.collect()]
 
 
-def generate_read_query(conn: dict, table: str, type_mapping_func: str) -> str:
-    """Generate the query to read data with type transformations applied"""
-    print(f"Mapping types for system: '{conn['system']['name']}' with type mapping function: \n{type_mapping_func}")
-    namespace: dict[str, Any] = {}
-    exec(type_mapping_func, namespace)
-    transform_columns: Callable[[str, str], str] = namespace["transform_columns"]
+def generate_read_query(
+    conn: dict, table: str, type_mapping_func: str, column_overrides: dict[str, dict[str, str]] | None = None
+) -> str:
+    """Generate the query to read data with type transformations applied.
+    column_overrides: {col_name_lower: {system_id_str: sql_expression}}
+    """
+    system_id_str: str = str(conn["system"]["id"])
+    print(f"Mapping types for system: '{conn['system']['name']}' with type mapping function: \n{type_mapping_func or '(none)'}")
+
+    transform_columns: Callable[[str, str], str] | None = None
+    if type_mapping_func and type_mapping_func.strip():
+        namespace: dict[str, Any] = {}
+        exec(type_mapping_func, namespace)
+        transform_columns = namespace["transform_columns"]
 
     col_types: list[tuple[str, str]] = get_column_types(conn, table)
-    cast_columns: list[str] = (
-        [transform_columns(name, data_type) for name, data_type in col_types] if col_types else ["*"]
-    )
+    if not col_types:
+        return f"SELECT * FROM {table}"
+
+    cast_columns: list[str] = []
+    for name, data_type in col_types:
+        override_expr: str | None = (column_overrides or {}).get(name.lower(), {}).get(system_id_str)
+        if override_expr:
+            cast_columns.append(f"{override_expr} AS {name}")
+        elif transform_columns:
+            cast_columns.append(transform_columns(name, data_type))
+        else:
+            cast_columns.append(name)
     return f"SELECT {', '.join(cast_columns)} FROM {table}"
 
 
@@ -129,6 +146,7 @@ def read_data(
     query: str | None = None,
     watermark_expr: str | None = None,
     type_mapping_func: str | None = None,
+    column_overrides: dict[str, dict[str, str]] | None = None,
 ) -> DataFrame:
     """Read data from system (Databricks catalog or JDBC)"""
     spark: SparkSession = SparkSession.getActiveSession()
@@ -157,9 +175,10 @@ def read_data(
                 print(f"Issue with REFRESH or UNCACHE: {e}")
 
     watermark_clause: str = f" WHERE {watermark_expr}" if watermark_expr else ""
+    has_transforms: bool = bool(type_mapping_func and type_mapping_func.strip()) or bool(column_overrides)
     read_query: str = (
-        generate_read_query(conn, table, type_mapping_func)
-        if type_mapping_func and type_mapping_func.strip()
+        generate_read_query(conn, table, type_mapping_func or "", column_overrides)
+        if has_transforms
         else f"SELECT * FROM {table}"
     )
     read_query += watermark_clause
