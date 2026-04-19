@@ -67,8 +67,6 @@ include_columns: list[str] = json.loads(dbutils.widgets.get("include_columns") o
 exclude_columns: list[str] = json.loads(dbutils.widgets.get("exclude_columns") or "[]")
 persist_catalog: str | None = dbutils.widgets.get("persist_catalog") or None
 options: dict | str = json.loads(dbutils.widgets.get("options") or "{}")
-if isinstance(options, str):
-    options = json.loads(options)
 column_overrides: dict[str, dict[str, str]] | None = options.get("column_overrides") or None
 
 # sanitize column names
