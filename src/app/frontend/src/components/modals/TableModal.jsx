@@ -32,8 +32,8 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
     pk_columns: table?.pk_columns || [],
     watermark_filter: table?.watermark_filter || "",
     exclude_columns: table?.exclude_columns || [],
-    options: table?.options || {},
-    config_overrides: table?.config_overrides || null,
+    options: (typeof table?.options === 'string' ? JSON.parse(table.options || '{}') : table?.options) || {},
+    config_overrides: (typeof table?.config_overrides === 'string' ? JSON.parse(table.config_overrides) : table?.config_overrides) || null,
     version: table?.version || 0
   }));
   
@@ -41,7 +41,7 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
   const [tags, setTags] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [overridesExpanded, setOverridesExpanded] = useState(
-    () => Object.keys(table?.options?.column_overrides || {}).length > 0
+    () => Object.keys(form.options?.column_overrides || {}).length > 0
   );
   const [addingOverride, setAddingOverride] = useState(false);
   const [newOverrideCol, setNewOverrideCol] = useState('');
@@ -346,7 +346,7 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
               <svg className="w-4 h-4 transition-transform" style={{ transform: overridesExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
-              <span className="font-medium text-sm">Column Overrides</span>
+              <span className="font-medium text-sm">Column Type Overrides</span>
               {Object.keys(columnOverrides).length > 0 && (
                 <span className="text-xs text-purple-400">({Object.values(columnOverrides).reduce((n, v) => n + Object.keys(v).length, 0)})</span>
               )}

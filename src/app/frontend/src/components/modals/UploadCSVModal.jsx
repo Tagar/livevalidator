@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { parseCSV } from '../../utils/csvParser';
+import { resolveOverrideIds } from '../../utils/arrays';
 import { tableService, queryService, scheduleService } from '../../services/api';
 
 export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) {
@@ -192,6 +193,7 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">pk_columns</code> - Comma-separated primary key columns</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">watermark_filter</code> - Optional WHERE clause filter expression</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">exclude_columns</code> - Comma-separated columns to exclude</li>
+                      <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">options</code> - JSON object with column type overrides (e.g., {`{"column_overrides":{"col_x":{"SystemName":"CAST(col_x AS DATE)"}}}`})</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">config_overrides</code> - JSON object for config overrides (e.g., {`{"skip_row_validation":true}`})</li>
                       <li><code className="bg-charcoal-700 px-2 py-0.5 rounded">tags</code> - Comma-separated tags to apply (e.g., "QUAL-8D,production")</li>
                     </ul>
@@ -300,7 +302,7 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
             const knownCols = type === 'schedules'
               ? ['name','cron_expr','timezone','enabled']
               : type === 'tables'
-              ? ['name','src_schema','src_table','schedule_name','source','target','src_system_name','tgt_system_name','tgt_schema','tgt_table','is_active','compare_mode','pk_columns','watermark_filter','exclude_columns','config_overrides','tags']
+              ? ['name','src_schema','src_table','schedule_name','source','target','src_system_name','tgt_system_name','tgt_schema','tgt_table','is_active','compare_mode','pk_columns','watermark_filter','exclude_columns','options','config_overrides','tags']
               : ['name','src_sql','tgt_sql','schedule_name','source','target','src_system_name','tgt_system_name','is_active','compare_mode','pk_columns','config_overrides','tags'];
             const cols = knownCols.filter(c => parsed[0]?.hasOwnProperty(c));
             return (
@@ -319,7 +321,9 @@ export function UploadCSVModal({ type, systems, schedules, onClose, onUpload }) 
                         <tr key={i} className="border-b border-charcoal-300/30">
                           <td className="p-2">{i + 1}</td>
                           {cols.map(key => {
-                            const val = row[key];
+                            let val = row[key];
+                            if (key === 'options' && val?.column_overrides && systems.length)
+                              val = { ...val, column_overrides: resolveOverrideIds(val.column_overrides, systems) };
                             const display = val === null || val === undefined ? '' 
                               : Array.isArray(val) ? val.join(', ')
                               : typeof val === 'object' ? JSON.stringify(val)

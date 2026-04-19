@@ -70,6 +70,19 @@ function validateCSVData(data, type, schedules, systems) {
       }
       
       const configOverrides = parseJson(row.config_overrides, rowErrors, 'config_overrides');
+      const options = parseJson(row.options, rowErrors, 'options');
+      // Resolve system names to IDs in column_overrides (CSV export uses names for readability)
+      if (options?.column_overrides && systems.length > 0) {
+        const resolved = {};
+        for (const [col, entries] of Object.entries(options.column_overrides)) {
+          resolved[col] = {};
+          for (const [key, expr] of Object.entries(entries)) {
+            const sys = systems.find(s => s.name === key);
+            resolved[col][sys ? String(sys.id) : key] = expr;
+          }
+        }
+        options.column_overrides = resolved;
+      }
       
       if (rowErrors.length === 0) {
         validRows.push({
@@ -81,6 +94,7 @@ function validateCSVData(data, type, schedules, systems) {
           pk_columns: row.pk_columns ? row.pk_columns.split(',').map(s => s.trim()) : null,
           include_columns: row.include_columns ? row.include_columns.split(',').map(s => s.trim()) : [],
           exclude_columns: row.exclude_columns ? row.exclude_columns.split(',').map(s => s.trim()) : [],
+          options: options,
           config_overrides: configOverrides,
           tags: row.tags ? row.tags.split(',').map(s => s.trim()).filter(s => s) : [],
           schedule_names: scheduleNames,

@@ -2,7 +2,7 @@ import React from 'react';
 import { EntityListView } from '../components/EntityListView';
 import { Checkbox } from '../components/Checkbox';
 import { TagList } from '../components/TagBadge';
-import { parseArray } from '../utils/arrays';
+import { parseArray, resolveOverrideIds } from '../utils/arrays';
 
 const tableConfig = {
   entityType: 'table',
@@ -23,20 +23,8 @@ const tableConfig = {
     const srcSystem = systems.find(s => s.id === row.src_system_id)?.name || '';
     const tgtSystem = systems.find(s => s.id === row.tgt_system_id)?.name || '';
     const configOverrides = row.config_overrides ? JSON.stringify(typeof row.config_overrides === 'string' ? JSON.parse(row.config_overrides) : row.config_overrides) : '';
-    // Resolve system IDs to names in column_overrides for CSV readability
     const rawOpts = typeof row.options === 'string' ? JSON.parse(row.options || '{}') : (row.options || {});
-    let exportOpts = rawOpts;
-    if (rawOpts.column_overrides) {
-      const readable = {};
-      for (const [col, entries] of Object.entries(rawOpts.column_overrides)) {
-        readable[col] = {};
-        for (const [sysId, expr] of Object.entries(entries)) {
-          const name = systems.find(s => String(s.id) === String(sysId))?.name || sysId;
-          readable[col][name] = expr;
-        }
-      }
-      exportOpts = { ...rawOpts, column_overrides: readable };
-    }
+    const exportOpts = rawOpts.column_overrides ? { ...rawOpts, column_overrides: resolveOverrideIds(rawOpts.column_overrides, systems) } : rawOpts;
     const optionsStr = Object.keys(exportOpts).length ? JSON.stringify(exportOpts) : '';
     return [
       row.name, row.src_schema, row.src_table, row.tgt_schema, row.tgt_table,
