@@ -89,7 +89,6 @@ def generate_read_query(
     """Generate the query to read data with type transformations applied.
     column_overrides: {col_name_lower: {system_id_str: sql_expression}}
     """
-    system_id_str: str = str(conn["system"]["id"])
     print(f"Mapping types for system: '{conn['system']['name']}' with type mapping function: \n{type_mapping_func or '(none)'}")
 
     transform_columns: Callable[[str, str], str] | None = None
@@ -99,12 +98,10 @@ def generate_read_query(
         transform_columns = namespace["transform_columns"]
 
     col_types: list[tuple[str, str]] = get_column_types(conn, table)
-    if not col_types:
-        return f"SELECT * FROM {table}"
 
     cast_columns: list[str] = []
     for name, data_type in col_types:
-        override_expr: str | None = (column_overrides or {}).get(name.lower(), {}).get(system_id_str)
+        override_expr: str | None = (column_overrides or {}).get(name.lower(), {}).get(str(conn["system"]["id"]))
         if override_expr:
             cast_columns.append(f"{override_expr} AS {name}")
         elif transform_columns:
