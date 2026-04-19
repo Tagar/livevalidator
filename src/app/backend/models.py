@@ -64,6 +64,7 @@ class BulkTableItem(BaseModel):
     watermark_filter: str | None = None
     include_columns: list[str] | None = None
     exclude_columns: list[str] | None = None
+    options: dict = Field(default_factory=dict)
     config_overrides: dict | None = None
     is_active: bool | None = True
     tags: list[str] | None = None

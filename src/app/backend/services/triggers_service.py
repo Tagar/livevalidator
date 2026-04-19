@@ -200,7 +200,9 @@ class TriggersService:
             "pk_columns": json.dumps(enriched.get("pk_columns") or []),
             "include_columns": json.dumps(enriched.get("include_columns") or []),
             "exclude_columns": json.dumps(enriched.get("exclude_columns") or []),
-            "options": json.dumps(enriched.get("options") or {}),
+            "options": enriched["options"]
+            if isinstance(enriched.get("options"), str)
+            else json.dumps(enriched.get("options") or {}),
             "config": json.dumps(resolved_config),
         }
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { EntityListView } from '../components/EntityListView';
 import { Checkbox } from '../components/Checkbox';
 import { TagList } from '../components/TagBadge';
-import { parseArray } from '../utils/arrays';
+import { parseArray, resolveOverrideIds } from '../utils/arrays';
 
 const tableConfig = {
   entityType: 'table',
@@ -18,11 +18,14 @@ const tableConfig = {
     const name = row.name?.toLowerCase() || '';
     return srcTable.includes(search) || tgtTable.includes(search) || name.includes(search);
   },
-  exportHeaders: ['name', 'src_schema', 'src_table', 'tgt_schema', 'tgt_table', 'source', 'target', 'schedule_name', 'is_active', 'compare_mode', 'pk_columns', 'watermark_filter', 'exclude_columns', 'config_overrides', 'tags'],
+  exportHeaders: ['name', 'src_schema', 'src_table', 'tgt_schema', 'tgt_table', 'source', 'target', 'schedule_name', 'is_active', 'compare_mode', 'pk_columns', 'watermark_filter', 'exclude_columns', 'options', 'config_overrides', 'tags'],
   exportRowFn: (row, systems) => {
     const srcSystem = systems.find(s => s.id === row.src_system_id)?.name || '';
     const tgtSystem = systems.find(s => s.id === row.tgt_system_id)?.name || '';
     const configOverrides = row.config_overrides ? JSON.stringify(typeof row.config_overrides === 'string' ? JSON.parse(row.config_overrides) : row.config_overrides) : '';
+    const rawOpts = typeof row.options === 'string' ? JSON.parse(row.options || '{}') : (row.options || {});
+    const exportOpts = rawOpts.column_overrides ? { ...rawOpts, column_overrides: resolveOverrideIds(rawOpts.column_overrides, systems) } : rawOpts;
+    const optionsStr = Object.keys(exportOpts).length ? JSON.stringify(exportOpts) : '';
     return [
       row.name, row.src_schema, row.src_table, row.tgt_schema, row.tgt_table,
       srcSystem, tgtSystem, parseArray(row.schedules).join(','),
@@ -30,6 +33,7 @@ const tableConfig = {
       Array.isArray(row.pk_columns) ? row.pk_columns.join(',') : (row.pk_columns || ''),
       row.watermark_filter || '',
       Array.isArray(row.exclude_columns) ? row.exclude_columns.join(',') : (row.exclude_columns || ''),
+      optionsStr,
       configOverrides,
       parseArray(row.tags).join(',')
     ];

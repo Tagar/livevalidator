@@ -16,7 +16,7 @@ export function QueryModal({ query, systems, schedules, onSave, onClose }) {
     pk_columns: query?.pk_columns || [],
     watermark_filter: query?.watermark_filter || "",
     exclude_columns: query?.exclude_columns || [],
-    config_overrides: query?.config_overrides || null,
+    config_overrides: (typeof query?.config_overrides === 'string' ? JSON.parse(query.config_overrides) : query?.config_overrides) || null,
     is_active: query?.is_active ?? true,
     version: query?.version || 0
   }));

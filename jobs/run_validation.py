@@ -66,7 +66,8 @@ pk_columns: list[str] = json.loads(dbutils.widgets.get("pk_columns") or "[]")
 include_columns: list[str] = json.loads(dbutils.widgets.get("include_columns") or "[]")
 exclude_columns: list[str] = json.loads(dbutils.widgets.get("exclude_columns") or "[]")
 persist_catalog: str | None = dbutils.widgets.get("persist_catalog") or None
-options: dict = json.loads(dbutils.widgets.get("options") or "{}")
+options: dict | str = json.loads(dbutils.widgets.get("options") or "{}")
+column_overrides: dict[str, dict[str, str]] | None = options.get("column_overrides") or None
 
 # sanitize column names
 pk_columns = [c.lower() for c in pk_columns if c]
@@ -270,10 +271,12 @@ try:
     print("Reading data...")
     src_xform_func, tgt_xform_func = get_type_transformations(src_conn["system"]["id"], tgt_conn["system"]["id"], client)
     src_df: DataFrame = read_data(
-        src_conn, table=source_table, query=source_sql, watermark_expr=watermark_expr, type_mapping_func=src_xform_func
+        src_conn, table=source_table, query=source_sql, watermark_expr=watermark_expr,
+        type_mapping_func=src_xform_func, column_overrides=column_overrides,
     )
     tgt_df: DataFrame = read_data(
-        tgt_conn, table=target_table, query=target_sql, watermark_expr=watermark_expr, type_mapping_func=tgt_xform_func
+        tgt_conn, table=target_table, query=target_sql, watermark_expr=watermark_expr,
+        type_mapping_func=tgt_xform_func, column_overrides=column_overrides,
     )
     
     # Step 3: Validate schema
@@ -419,7 +422,7 @@ if compare_mode == "except_all" and history_id:
 
 # COMMAND ----------
 # Display sample PKs that mismatched
-if result["rows_different"] == 0:
+if result.get("sample_df"):
     result["sample_df"].display()
 
 # COMMAND ----------

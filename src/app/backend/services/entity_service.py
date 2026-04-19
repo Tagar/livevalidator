@@ -278,9 +278,8 @@ class EntityService:
         if self.entity_type == "table":
             data.setdefault("tgt_schema", item.get("src_schema"))
             data.setdefault("tgt_table", item.get("src_table"))
-        # Bulk doesn't use options column
-        cols = [c for c in self.columns if c != "options"] + ["created_by", "updated_by"]
-        vals = [self._get_value(data, c, self.create_model) for c in self.columns if c != "options"] + [self.user_email]
+        cols = self.columns + ["created_by", "updated_by"]
+        vals = [self._get_value(data, c, self.create_model) for c in self.columns] + [self.user_email]
         n = len(vals)
         placeholders = [f"${i + 1}" for i in range(n)] + [f"${n}"]
         sql = f"INSERT INTO {self.db_table} ({', '.join(cols)}) VALUES ({', '.join(placeholders)}) RETURNING *"
@@ -291,8 +290,7 @@ class EntityService:
         if self.entity_type == "table":
             data.setdefault("tgt_schema", item.get("src_schema"))
             data.setdefault("tgt_table", item.get("src_table"))
-        # Bulk update: skip name and options
-        skip = {"name", "options"}
+        skip = {"name"}
         sets, vals = [], [entity_id]
         for i, col in enumerate(c for c in self.columns if c not in skip):
             sets.append(f"{col}=${i + 2}")

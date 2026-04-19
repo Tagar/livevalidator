@@ -32,13 +32,62 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
     pk_columns: table?.pk_columns || [],
     watermark_filter: table?.watermark_filter || "",
     exclude_columns: table?.exclude_columns || [],
-    config_overrides: table?.config_overrides || null,
+    options: (typeof table?.options === 'string' ? JSON.parse(table.options || '{}') : table?.options) || {},
+    config_overrides: (typeof table?.config_overrides === 'string' ? JSON.parse(table.config_overrides) : table?.config_overrides) || null,
     version: table?.version || 0
   }));
   
   const [selectedSchedules, setSelectedSchedules] = useState([]);
   const [tags, setTags] = useState([]);
   const [allTags, setAllTags] = useState([]);
+  const [overridesExpanded, setOverridesExpanded] = useState(
+    () => Object.keys(form.options?.column_overrides || {}).length > 0
+  );
+  const [addingOverride, setAddingOverride] = useState(false);
+  const [newOverrideCol, setNewOverrideCol] = useState('');
+  const [newOverrideSystem, setNewOverrideSystem] = useState('');
+  const [newOverrideExpr, setNewOverrideExpr] = useState('');
+
+  const columnOverrides = form.options?.column_overrides || {};
+
+  const srcSystem = systems.find(s => s.id === form.src_system_id);
+  const tgtSystem = systems.find(s => s.id === form.tgt_system_id);
+  const overrideSystemOptions = [srcSystem, tgtSystem].filter(Boolean);
+
+  const setColumnOverrides = (next) => {
+    const cleaned = Object.fromEntries(Object.entries(next).filter(([, v]) => Object.keys(v).length > 0));
+    setForm(f => ({ ...f, options: { ...f.options, column_overrides: Object.keys(cleaned).length ? cleaned : undefined } }));
+  };
+
+  const handleAddOverride = () => {
+    const col = newOverrideCol.trim().toLowerCase();
+    const sysId = newOverrideSystem;
+    const expr = newOverrideExpr.trim();
+    if (!col || !sysId || !expr) return;
+    if (columnOverrides[col]?.[sysId]) return; // duplicate blocked
+    const updated = { ...columnOverrides, [col]: { ...(columnOverrides[col] || {}), [sysId]: expr } };
+    setColumnOverrides(updated);
+    setNewOverrideCol('');
+    setNewOverrideSystem('');
+    setNewOverrideExpr('');
+    setAddingOverride(false);
+  };
+
+  const handleRemoveOverride = (col, sysId) => {
+    const colEntry = { ...columnOverrides[col] };
+    delete colEntry[sysId];
+    const updated = { ...columnOverrides };
+    if (Object.keys(colEntry).length === 0) delete updated[col];
+    else updated[col] = colEntry;
+    setColumnOverrides(updated);
+  };
+
+  const handleUpdateOverrideExpr = (col, sysId, expr) => {
+    setColumnOverrides({
+      ...columnOverrides,
+      [col]: { ...(columnOverrides[col] || {}), [sysId]: expr }
+    });
+  };
   
   // Fetch existing bindings and tags for this table
   useEffect(() => {
@@ -81,6 +130,19 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
   
   const handleSave = async () => {
     setErrors([]);
+
+    // Validate column overrides: warn on empty expressions
+    const overrideErrors = [];
+    for (const [col, entries] of Object.entries(columnOverrides)) {
+      for (const [sysId, expr] of Object.entries(entries)) {
+        if (!expr.trim()) {
+          const sysName = systems.find(s => String(s.id) === String(sysId))?.name || sysId;
+          overrideErrors.push(`Column override "${col}" for ${sysName} has an empty expression`);
+        }
+      }
+    }
+    if (overrideErrors.length) { setErrors(overrideErrors); return; }
+
     setSaving(true);
     
     // Parse schema.table format
@@ -274,6 +336,90 @@ export function TableModal({ table, systems, schedules, onSave, onClose }) {
             <textarea value={Array.isArray(form.exclude_columns)?form.exclude_columns.join(', '):''} onChange={e=>setForm({...form, exclude_columns:e.target.value.split(',').map(s=>s.trim())})} onBlur={e=>setForm(f=>({...f, exclude_columns:(Array.isArray(f.exclude_columns)?f.exclude_columns:e.target.value.split(',').map(s=>s.trim())).filter(Boolean)}))} rows={3} className="w-full px-2 py-2 rounded-md border border-charcoal-200 bg-charcoal-400 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500" placeholder="column1, column2, column3" />
           </div>
           
+          {/* Column Overrides */}
+          <div className="mb-3 pb-3 border-t border-charcoal-200 pt-3">
+            <button
+              type="button"
+              onClick={() => setOverridesExpanded(v => !v)}
+              className="flex items-center gap-2 mb-2 text-gray-400 hover:text-rust-light transition-colors"
+            >
+              <svg className="w-4 h-4 transition-transform" style={{ transform: overridesExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+              <span className="font-medium text-sm">Column Type Overrides</span>
+              {Object.keys(columnOverrides).length > 0 && (
+                <span className="text-xs text-purple-400">({Object.values(columnOverrides).reduce((n, v) => n + Object.keys(v).length, 0)})</span>
+              )}
+            </button>
+            {overridesExpanded && (
+              <div className="space-y-3">
+                <p className="text-gray-500 text-xs">Override the system-pair type mapping for specific columns. Expression is used as-is in the SELECT.</p>
+                {Object.entries(columnOverrides).map(([col, entries]) => (
+                  <div key={col} className="bg-charcoal-600 rounded-md p-2">
+                    <div className="text-sm font-mono text-purple-300 mb-1">{col}</div>
+                    {Object.entries(entries).map(([sysId, expr]) => {
+                      const sysName = systems.find(s => String(s.id) === String(sysId))?.name || `System ${sysId}`;
+                      return (
+                        <div key={sysId} className="flex items-center gap-2 mb-1">
+                          <span className="text-xs text-gray-400 w-28 shrink-0 truncate" title={sysName}>{sysName}:</span>
+                          <input
+                            value={expr}
+                            onChange={e => handleUpdateOverrideExpr(col, sysId, e.target.value)}
+                            className="flex-1 min-w-0 px-2 py-1 bg-charcoal-400 border border-charcoal-300 rounded text-xs font-mono text-gray-100 focus:outline-none focus:border-rust-light"
+                          />
+                          <span className="text-xs text-gray-500 font-mono shrink-0">AS {col}</span>
+                          <button onClick={() => handleRemoveOverride(col, sysId)} className="text-red-400 hover:text-red-300 text-sm shrink-0" title="Remove">×</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+                {addingOverride ? (
+                  <div className="bg-charcoal-600 rounded-md p-2 space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        value={newOverrideCol}
+                        onChange={e => setNewOverrideCol(e.target.value)}
+                        placeholder="column name"
+                        className="flex-1 px-2 py-1 bg-charcoal-400 border border-charcoal-300 rounded text-xs font-mono text-gray-100 focus:outline-none focus:border-rust-light"
+                      />
+                      <select
+                        value={newOverrideSystem}
+                        onChange={e => setNewOverrideSystem(e.target.value)}
+                        className="px-2 py-1 bg-charcoal-400 border border-charcoal-300 rounded text-xs text-gray-100 focus:outline-none focus:border-rust-light"
+                      >
+                        <option value="">System...</option>
+                        {overrideSystemOptions.map(s => {
+                          const col = newOverrideCol.trim().toLowerCase();
+                          const blocked = col && columnOverrides[col]?.[String(s.id)];
+                          return <option key={s.id} value={String(s.id)} disabled={!!blocked}>{s.name}{blocked ? ' (exists)' : ''}</option>;
+                        })}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={newOverrideExpr}
+                        onChange={e => setNewOverrideExpr(e.target.value)}
+                        placeholder="e.g. CAST(col_x AS DATETIME)"
+                        className="flex-1 min-w-0 px-2 py-1 bg-charcoal-400 border border-charcoal-300 rounded text-xs font-mono text-gray-100 focus:outline-none focus:border-rust-light"
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddOverride(); } }}
+                      />
+                      {newOverrideCol.trim() && (
+                        <span className="text-xs text-gray-500 font-mono shrink-0">AS {newOverrideCol.trim().toLowerCase()}</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={handleAddOverride} disabled={!newOverrideCol.trim() || !newOverrideSystem || !newOverrideExpr.trim()} className="px-2 py-1 text-xs bg-purple-600 text-gray-100 rounded hover:bg-purple-500 disabled:opacity-40">Add</button>
+                      <button onClick={() => { setAddingOverride(false); setNewOverrideCol(''); setNewOverrideSystem(''); setNewOverrideExpr(''); }} className="px-2 py-1 text-xs bg-charcoal-400 text-gray-300 rounded hover:bg-charcoal-300">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setAddingOverride(true)} className="text-xs text-purple-400 hover:text-purple-300">+ Add Override</button>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Tags */}
           <div className="mb-3 pb-3 border-t border-charcoal-200 pt-3">
             <label className="block mb-2 font-medium text-gray-400 text-sm">Tags</label>
