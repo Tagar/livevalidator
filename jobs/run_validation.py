@@ -66,7 +66,9 @@ pk_columns: list[str] = json.loads(dbutils.widgets.get("pk_columns") or "[]")
 include_columns: list[str] = json.loads(dbutils.widgets.get("include_columns") or "[]")
 exclude_columns: list[str] = json.loads(dbutils.widgets.get("exclude_columns") or "[]")
 persist_catalog: str | None = dbutils.widgets.get("persist_catalog") or None
-options: dict = json.loads(dbutils.widgets.get("options") or "{}")
+options: dict | str = json.loads(dbutils.widgets.get("options") or "{}")
+if isinstance(options, str):
+    options = json.loads(options)
 column_overrides: dict[str, dict[str, str]] | None = options.get("column_overrides") or None
 
 # sanitize column names
@@ -422,7 +424,7 @@ if compare_mode == "except_all" and history_id:
 
 # COMMAND ----------
 # Display sample PKs that mismatched
-if result["rows_different"] == 0:
+if result.get("sample_df"):
     result["sample_df"].display()
 
 # COMMAND ----------
