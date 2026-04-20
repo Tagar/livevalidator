@@ -26,7 +26,7 @@ function ErrorPopover({ error, onClose }) {
 
   return (
     <div ref={ref} className="fixed z-50 bg-charcoal-500 rounded-lg shadow-xl border border-orange-700/50 p-3 w-[500px] h-[300px] flex flex-col" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-      <pre className="flex-1 text-sm text-gray-200 whitespace-pre-wrap break-words overflow-y-auto select-all m-0 mb-2 pr-2">
+      <pre className="flex-1 text-sm text-gray-200 whitespace-pre-wrap break-words overflow-y-auto select-text m-0 mb-2 pr-2">
         {error || 'Unknown error'}
       </pre>
       <div className="flex gap-1.5 justify-end shrink-0">

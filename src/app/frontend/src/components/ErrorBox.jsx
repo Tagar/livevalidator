@@ -3,7 +3,7 @@ import React from 'react';
 export function ErrorBox({ message, onClose }) {
   return (
     <div className="bg-red-900/30 border border-red-700 text-red-200 px-4 py-3 rounded-md mb-4 flex justify-between items-start">
-      <div className="flex-1">
+      <div className="flex-1 select-text">
         <strong className="font-bold">Error: </strong>
         <span>{message}</span>
       </div>
