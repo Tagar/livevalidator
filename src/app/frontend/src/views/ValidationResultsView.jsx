@@ -83,7 +83,10 @@ export function ValidationResultsView({ highlightId, onClearHighlight, onNavigat
   // Calculate date range based on preset
   const getDateRange = useCallback(() => {
     if (dateFrom || dateTo) {
-      return { from: dateFrom, to: dateTo };
+      return {
+        from: dateFrom ? new Date(dateFrom).toISOString() : '',
+        to: dateTo ? new Date(dateTo).toISOString() : '',
+      };
     }
     if (!activePreset) {
       return { from: '', to: '' };
