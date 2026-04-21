@@ -208,7 +208,7 @@ def process_next_trigger(running_per_system: dict[int, int]) -> bool:
             "pk_columns": json.dumps(trigger.get("pk_columns") or []),
             "include_columns": json.dumps(trigger.get("include_columns") or []),
             "exclude_columns": json.dumps(trigger.get("exclude_columns") or []),
-            "options": json.dumps(trigger.get("options") or {}),
+            "options": trigger["options"] if isinstance(trigger.get("options"), str) else json.dumps(trigger.get("options") or {}),
             "config": json.dumps(config),
         }
 

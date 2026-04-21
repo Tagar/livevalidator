@@ -37,15 +37,15 @@ def run_except_all_count_analysis(result: dict) -> dict | None:
     # Compute diffs if needed
     if not row_count_match and src_tgt_diff_df is None:
         src_tgt_diff_df = src_df.exceptAll(tgt_df)
-        if not os.environ.get("IS_SERVERLESS"):
+        if os.environ.get("IS_SERVERLESS"):
             src_tgt_diff_df.localCheckpoint(eager=True)
         else:
             src_tgt_diff_df.cache()
         in_src_not_tgt_count = src_tgt_diff_df.count()
         in_src_not_tgt_samples = [r.asDict() for r in src_tgt_diff_df.limit(10).collect()]
 
-    tgt_src_diff_df = tgt_df.exceptAll(src_df).localCheckpoint(eager=True)
-    if not os.environ.get("IS_SERVERLESS"):
+    tgt_src_diff_df = tgt_df.exceptAll(src_df)
+    if os.environ.get("IS_SERVERLESS"):
         tgt_src_diff_df.localCheckpoint(eager=True)
     else:
         tgt_src_diff_df.cache()
