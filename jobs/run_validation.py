@@ -402,19 +402,16 @@ if not history_id:
 
 # COMMAND ----------
 
-# Handle row count mismatch for except_all mode
 if compare_mode == "except_all" and history_id:
-    if not result["row_count_match"]:
-        print("Running except_all count analysis...")
-        except_all_count_analysis = run_except_all_count_analysis(result)
-        if except_all_count_analysis:
-            # Overwrite sample_differences with the full analysis (contains samples + column analysis)
-            client.api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": except_all_count_analysis})
-            print(f"Updated validation history {history_id} with except_all count analysis")
-        dbutils.notebook.exit("Validation failed - Row count mismatch")
-    else:
+    print("Running except_all analysis...")
+    except_all_analysis = run_except_all_count_analysis(result)
+    if except_all_analysis:
+        client.api_call("PATCH", f"/api/validation-history/{history_id}", {"sample_differences": except_all_analysis})
+        print(f"Updated validation history {history_id} with except_all analysis")
+    reason = "Row count mismatch" if not result["row_count_match"] else "Row value mismatch"
+    if result["row_count_match"]:
         sample_df.display()
-        dbutils.notebook.exit("Validation failed - Row value mismatch")
+    dbutils.notebook.exit(f"Validation failed - {reason}")
 
 # COMMAND ----------
 # MAGIC %md
