@@ -1,5 +1,5 @@
 import React from 'react';
-import { DiffHighlight, ExpandableCell } from '../DiffComponents';
+import { CopySqlButton, DiffHighlight, ExpandableCell } from '../DiffComponents';
 
 export function PKModeView({ samples, validation }) {
   if (!samples?.samples || samples.samples.length === 0) {
@@ -22,6 +22,8 @@ export function PKModeView({ samples, validation }) {
   }
   
   const { pk_columns, samples: pkSamples } = samples;
+  const tableName = validation?.source_table
+    || (validation?.tgt_sql_query || validation?.src_sql_query ? `(${(validation.tgt_sql_query || validation.src_sql_query).trim().replace(/;$/, '')})` : 'TABLE_NAME');
   
   return (
     <div className="space-y-3">
@@ -34,13 +36,14 @@ export function PKModeView({ samples, validation }) {
       
       {pkSamples.map((sample, idx) => (
         <div key={idx} className="border border-charcoal-300 rounded-lg overflow-hidden">
-          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300">
-            <span className="text-gray-300 font-semibold text-xs">Record #{idx + 1} — </span>
+          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300 flex items-center">
+            <span className="text-gray-300 font-semibold text-xs">Record #{idx + 1}</span>
+            <span className="mx-2"><CopySqlButton tableName={tableName} row={sample.pk} /></span>
             {Object.entries(sample.pk).map(([key, value], pkIdx) => (
               <span key={key}>
                 <span className="text-gray-400 text-xs">{key}:</span>
                 <span className="text-rust-light font-mono text-xs ml-1 mr-3">{value !== null ? String(value) : 'null'}</span>
-                {pkIdx < Object.keys(sample.pk).length - 1 && <span className="text-gray-600">•</span>}
+                {pkIdx < Object.keys(sample.pk).length - 1 && <span className="text-gray-600 mr-1">•</span>}
               </span>
             ))}
           </div>
