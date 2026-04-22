@@ -717,6 +717,9 @@ export function AnalysisView({
   onTrigger,
   onEditTable,
   onEditQuery,
+  initialEntityId,
+  initialEntityType,
+  onClearInitialEntity,
 }) {
   const [filterText, setFilterText] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -774,6 +777,14 @@ export function AnalysisView({
     }
     return result;
   }, [tables, queries, systems]);
+
+  useEffect(() => {
+    if (initialEntityId && initialEntityType && entities.length > 0) {
+      const match = entities.find(e => e.id === initialEntityId && e._entityType === initialEntityType);
+      if (match) setSelectedEntity(match);
+      if (onClearInitialEntity) onClearInitialEntity();
+    }
+  }, [initialEntityId, initialEntityType, entities, onClearInitialEntity]);
 
   const allTags = useMemo(() => {
     const tagSet = new Set();

@@ -108,21 +108,21 @@ const tableConfig = {
 function StatusBadge({ row, onNavigateToResult }) {
   if (row.last_run_status === 'succeeded') {
     return (
-      <button onClick={() => onNavigateToResult(row.last_run_id)} className="px-1.5 py-0.5 text-sm rounded-full bg-green-900/40 text-green-300 border border-green-700 whitespace-nowrap hover:bg-green-900/60 transition-colors" title={`Last run: ${new Date(row.last_run_timestamp).toLocaleString()}`}>
+      <button onClick={() => onNavigateToResult(row.id)} className="px-1.5 py-0.5 text-sm rounded-full bg-green-900/40 text-green-300 border border-green-700 whitespace-nowrap hover:bg-green-900/60 transition-colors" title={`Last run: ${new Date(row.last_run_timestamp).toLocaleString()}`}>
         ✓ Success
       </button>
     );
   }
   if (row.last_run_status === 'failed') {
     return (
-      <button onClick={() => onNavigateToResult(row.last_run_id)} className="px-1.5 py-0.5 text-sm rounded-full bg-red-900/40 text-red-300 border border-red-700 whitespace-nowrap hover:bg-red-900/60 transition-colors" title={`Last run: ${new Date(row.last_run_timestamp).toLocaleString()}`}>
+      <button onClick={() => onNavigateToResult(row.id)} className="px-1.5 py-0.5 text-sm rounded-full bg-red-900/40 text-red-300 border border-red-700 whitespace-nowrap hover:bg-red-900/60 transition-colors" title={`Last run: ${new Date(row.last_run_timestamp).toLocaleString()}`}>
         ✗ Failed
       </button>
     );
   }
   if (row.last_run_status === 'error') {
     return (
-      <button onClick={() => onNavigateToResult(row.last_run_id)} className="px-1.5 py-0.5 text-sm rounded-full bg-orange-900/40 text-orange-300 border border-orange-700 hover:bg-orange-900/60 transition-colors animate-pulse max-w-[200px] truncate" title={row.last_run_error || 'Unknown error'}>
+      <button onClick={() => onNavigateToResult(row.id)} className="px-1.5 py-0.5 text-sm rounded-full bg-orange-900/40 text-orange-300 border border-orange-700 hover:bg-orange-900/60 transition-colors animate-pulse max-w-[200px] truncate" title={row.last_run_error || 'Unknown error'}>
         ⚠ {row.last_run_error ? row.last_run_error.substring(0, 30) + (row.last_run_error.length > 30 ? '...' : '') : 'Error'}
       </button>
     );

@@ -412,6 +412,13 @@ export default function App() {
     setView('results');
   };
 
+  // Navigate to entity detail in Analysis view
+  const [analysisTarget, setAnalysisTarget] = useState(null);
+  const navigateToAnalysis = (entityType, entityId) => {
+    setAnalysisTarget({ entityType, entityId });
+    setView('analysis');
+  };
+
   // Configure a new table from lineage (pre-populate schema.table from lineage row)
   const configureTableFromLineage = ({ schema_name, object_name, catalog_name }) => {
     const srcTable = schema_name && object_name ? `${schema_name}.${object_name}` : object_name || '';
@@ -580,6 +587,9 @@ export default function App() {
             onTrigger={triggerNow}
             onEditTable={setEditingTable}
             onEditQuery={setEditingQuery}
+            initialEntityId={analysisTarget?.entityId}
+            initialEntityType={analysisTarget?.entityType}
+            onClearInitialEntity={() => setAnalysisTarget(null)}
           />
         )}
 
@@ -598,7 +608,7 @@ export default function App() {
             onUploadCSV={() => setUploadCSVType('tables')}
             onClearError={tbl.clearError}
             renderCell={renderCell}
-            onNavigateToResult={navigateToResult}
+            onNavigateToResult={(id) => navigateToAnalysis('table', id)}
             onRefresh={refreshAll}
             highlightEntityId={highlightEntityId}
             onClearEntityHighlight={() => setHighlightEntityId(null)}
@@ -621,7 +631,7 @@ export default function App() {
             onUploadCSV={() => setUploadCSVType('queries')}
             onClearError={qs.clearError}
             renderCell={renderCell}
-            onNavigateToResult={navigateToResult}
+            onNavigateToResult={(id) => navigateToAnalysis('query', id)}
             onRefresh={refreshAll}
             highlightEntityId={highlightEntityId}
             onClearEntityHighlight={() => setHighlightEntityId(null)}
