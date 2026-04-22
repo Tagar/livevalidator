@@ -23,9 +23,11 @@ export function ExceptAllCountMismatchView({ samples, validation }) {
     <div className="space-y-3">
       <div className="p-2 bg-orange-900/20 border border-orange-700 rounded">
         <p className="text-orange-300 text-xs">
-          Row count mismatch: Source has {validation.row_count_source?.toLocaleString()} rows, 
-          Target has {validation.row_count_target?.toLocaleString()} rows 
-          (diff: {Math.abs((validation.row_count_source || 0) - (validation.row_count_target || 0)).toLocaleString()})
+          {validation.row_count_match === false ? (
+            <>Row count mismatch: Source has {validation.row_count_source?.toLocaleString()} rows, Target has {validation.row_count_target?.toLocaleString()} rows (diff: {Math.abs((validation.row_count_source || 0) - (validation.row_count_target || 0)).toLocaleString()})</>
+          ) : (
+            <>Row values differ: {validation.rows_different?.toLocaleString()} rows differ out of {validation.rows_compared?.toLocaleString()} compared</>
+          )}
         </p>
       </div>
       
