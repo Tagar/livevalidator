@@ -215,13 +215,14 @@ export function ValidationResultsTable({
                 )}
                 <td className="px-2 py-1.5 text-gray-200 font-medium text-sm max-w-[500px]" title={v.entity_name}>
                   {onEntityClick ? (
-                    <button
-                      onClick={() => onEntityClick(v.entity_type, v.entity_id)}
-                      className="truncate overflow-hidden whitespace-nowrap [direction:rtl] text-left block w-full text-purple-400 hover:text-purple-300 hover:underline transition-colors cursor-pointer"
+                    <a
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); onEntityClick(v.entity_type, v.entity_id); }}
+                      className="truncate overflow-hidden whitespace-nowrap [direction:rtl] text-left block w-full text-purple-400 hover:text-purple-300 hover:underline transition-colors cursor-pointer select-text"
                       title={`Click to view ${v.entity_name} in ${v.entity_type === 'table' ? 'Tables' : 'Queries'}`}
                     >
                       <span className="[direction:ltr]">{v.entity_name}</span>
-                    </button>
+                    </a>
                   ) : (
                     <div className="truncate overflow-hidden whitespace-nowrap [direction:rtl] text-left">
                       <span className="[direction:ltr]">{v.entity_name}</span>
