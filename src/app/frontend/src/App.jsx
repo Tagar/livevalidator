@@ -96,6 +96,7 @@ export default function App() {
   };
   const [highlightId, setHighlightId] = useState(null); // For highlighting specific validation run
   const [highlightEntityId, setHighlightEntityId] = useState(null); // For highlighting specific entity in tables/queries
+  const [fadingEntityId, setFadingEntityId] = useState(null);
   const [currentUser, setCurrentUser] = useState(null); // { email, role }
   const [selectedDashboardId, setSelectedDashboardId] = useState(null);
   
@@ -526,8 +527,8 @@ export default function App() {
 
         {/* Modals */}
         {conflict && <VersionConflictDialog current={conflict.row} onRefresh={conflict.onRefresh} onCancel={conflict.onCancel} />}
-        {editingTable && <TableModal table={editingTable} systems={sys.data} schedules={sc.data} onSave={handleTableSave} onClose={() => setEditingTable(null)} />}
-        {editingQuery && <QueryModal query={editingQuery} systems={sys.data} schedules={sc.data} onSave={handleQuerySave} onClose={() => setEditingQuery(null)} />}
+        {editingTable && <TableModal table={editingTable} systems={sys.data} schedules={sc.data} onSave={handleTableSave} onClose={() => { const id = editingTable?.id; setEditingTable(null); if (id) { setFadingEntityId(id); setTimeout(() => setFadingEntityId(null), 5000); }}} />}
+        {editingQuery && <QueryModal query={editingQuery} systems={sys.data} schedules={sc.data} onSave={handleQuerySave} onClose={() => { const id = editingQuery?.id; setEditingQuery(null); if (id) { setFadingEntityId(id); setTimeout(() => setFadingEntityId(null), 5000); }}} />}
         {editingSchedule && <ScheduleModal schedule={editingSchedule} onSave={handleScheduleSave} onClose={() => setEditingSchedule(null)} />}
         {editingSystem && <SystemModal system={editingSystem} onSave={handleSystemSave} onClose={() => setEditingSystem(null)} />}
         {uploadCSVType && <UploadCSVModal type={uploadCSVType} systems={sys.data} schedules={sc.data} onClose={() => setUploadCSVType(null)} onUpload={refreshAll} />}
@@ -601,6 +602,8 @@ export default function App() {
             onRefresh={refreshAll}
             highlightEntityId={highlightEntityId}
             onClearEntityHighlight={() => setHighlightEntityId(null)}
+            editingEntityId={editingTable?.id}
+            fadingEntityId={fadingEntityId}
           />
         )}
 
@@ -622,6 +625,8 @@ export default function App() {
             onRefresh={refreshAll}
             highlightEntityId={highlightEntityId}
             onClearEntityHighlight={() => setHighlightEntityId(null)}
+            editingEntityId={editingQuery?.id}
+            fadingEntityId={fadingEntityId}
           />
         )}
 

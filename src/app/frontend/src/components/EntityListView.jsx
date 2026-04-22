@@ -29,6 +29,8 @@ export function EntityListView({
   onRefresh,
   highlightEntityId,
   onClearEntityHighlight,
+  editingEntityId,
+  fadingEntityId,
   // Configuration
   config
 }) {
@@ -297,6 +299,8 @@ export function EntityListView({
                   row,
                   isSelected: selectedIds.has(row.id),
                   isHighlighted: row.id === highlightEntityId,
+                  isEditing: row.id === editingEntityId,
+                  isFading: row.id === fadingEntityId,
                   highlightedRowRef,
                   handleSelectRow,
                   onEdit,

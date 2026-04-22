@@ -50,15 +50,16 @@ const queryConfig = {
   renderRow: (props) => <QueryRow {...props} />,
 };
 
-function QueryRow({ row, isSelected, isHighlighted, highlightedRowRef, handleSelectRow, onEdit, onDelete, onTrigger, onNavigateToResult, renderCell, systems, entityTypePlural, triggerAction }) {
+function QueryRow({ row, isSelected, isHighlighted, isEditing, isFading, highlightedRowRef, handleSelectRow, onEdit, onDelete, onTrigger, onNavigateToResult, renderCell, systems, entityTypePlural, triggerAction }) {
   const [expanded, setExpanded] = useState(false);
   const scheduleNames = parseArray(row.schedules).join(', ');
+  const highlightClass = isHighlighted || isEditing ? 'bg-rust-light/20 ring-2 ring-rust-light' : isFading ? 'highlight-fade-out' : '';
   
   return (
     <React.Fragment key={row.id}>
       <tr 
         ref={isHighlighted ? highlightedRowRef : null}
-        className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${isSelected ? 'bg-purple-900/20' : ''} ${!row.is_active ? 'opacity-50' : ''} ${isHighlighted ? 'bg-rust-light/20 ring-2 ring-rust-light' : ''}`}
+        className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${isSelected ? 'bg-purple-900/20' : ''} ${!row.is_active ? 'opacity-50' : ''} ${highlightClass}`}
       >
         <td className="px-2 py-1 text-sm">
           <Checkbox checked={isSelected} onChange={(e) => handleSelectRow(row.id, e.target.checked)} />

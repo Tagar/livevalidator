@@ -71,6 +71,14 @@
   animation: shimmer 2s infinite;
 }
 
+@keyframes highlight-fade {
+  0% { background-color: rgba(229, 99, 58, 0.2); box-shadow: inset 0 0 0 2px #e5633a; }
+  100% { background-color: transparent; box-shadow: none; }
+}
+.highlight-fade-out {
+  animation: highlight-fade 5s ease-out forwards;
+}
+
 /* Dark mode scrollbars - global */
 *::-webkit-scrollbar {
   height: 8px;

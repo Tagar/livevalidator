@@ -53,17 +53,18 @@ const tableConfig = {
     { key: 'tags', label: 'Tags', className: 'w-24' },
     { key: 'actions', label: 'Actions', className: 'w-20' },
   ],
-  renderRow: ({ row, isSelected, isHighlighted, highlightedRowRef, handleSelectRow, onEdit, onDelete, onTrigger, onNavigateToResult, renderCell, systems, entityTypePlural, triggerAction }) => {
+  renderRow: ({ row, isSelected, isHighlighted, isEditing, isFading, highlightedRowRef, handleSelectRow, onEdit, onDelete, onTrigger, onNavigateToResult, renderCell, systems, entityTypePlural, triggerAction }) => {
     const scheduleNames = parseArray(row.schedules).join(', ');
     const srcTable = `${row.src_schema}.${row.src_table}`;
     const tgtTable = `${row.tgt_schema}.${row.tgt_table}`;
     const tablesMatch = srcTable === tgtTable;
+    const highlightClass = isHighlighted || isEditing ? 'bg-rust-light/20 ring-2 ring-rust-light' : isFading ? 'highlight-fade-out' : '';
     
     return (
       <tr 
         key={row.id}
         ref={isHighlighted ? highlightedRowRef : null}
-        className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${isSelected ? 'bg-purple-900/20' : ''} ${!row.is_active ? 'opacity-50' : ''} ${isHighlighted ? 'bg-rust-light/20 ring-2 ring-rust-light' : ''}`}
+        className={`border-b border-charcoal-300/30 hover:bg-charcoal-400/50 transition-colors ${isSelected ? 'bg-purple-900/20' : ''} ${!row.is_active ? 'opacity-50' : ''} ${highlightClass}`}
       >
         <td className="px-2 py-1 text-sm">
           <Checkbox checked={isSelected} onChange={(e) => handleSelectRow(row.id, e.target.checked)} />
