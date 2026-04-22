@@ -36,7 +36,7 @@ export function PKModeView({ samples, validation }) {
       
       {pkSamples.map((sample, idx) => (
         <div key={idx} className="border border-charcoal-300 rounded-lg overflow-hidden">
-          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300 flex items-center">
+          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300 flex items-center flex-wrap gap-y-1">
             <span className="text-gray-300 font-semibold text-xs">Record #{idx + 1}</span>
             <span className="mx-2"><CopySqlButton tableName={tableName} row={sample.pk} /></span>
             {Object.entries(sample.pk).map(([key, value], pkIdx) => (
