@@ -36,14 +36,14 @@ export function PKModeView({ samples, validation }) {
       
       {pkSamples.map((sample, idx) => (
         <div key={idx} className="border border-charcoal-300 rounded-lg overflow-hidden">
-          <div className="bg-charcoal-400 px-3 py-2 border-b border-charcoal-300 flex items-center flex-wrap gap-y-1">
-            <span className="text-gray-300 font-semibold text-xs">Record #{idx + 1}</span>
-            <span className="mx-2"><CopySqlButton tableName={tableName} row={sample.pk} /></span>
+          <div className="bg-charcoal-400 px-2 py-1.5 border-b border-charcoal-300 flex items-baseline flex-wrap gap-y-0.5 text-[11px] leading-tight">
+            <span className="text-gray-300 font-semibold mr-1.5">#{idx + 1}</span>
+            <span className="mr-1.5"><CopySqlButton tableName={tableName} row={sample.pk} /></span>
             {Object.entries(sample.pk).map(([key, value], pkIdx) => (
-              <span key={key}>
-                <span className="text-gray-400 text-xs">{key}:</span>
-                <span className="text-rust-light font-mono text-xs ml-1 mr-3">{value !== null ? String(value) : 'null'}</span>
-                {pkIdx < Object.keys(sample.pk).length - 1 && <span className="text-gray-600 mr-1">•</span>}
+              <span key={key} className="mr-1.5">
+                <span className="text-gray-500">{key}:</span>
+                <span className="text-rust-light font-mono ml-0.5">{value !== null ? String(value) : 'null'}</span>
+                {pkIdx < Object.keys(sample.pk).length - 1 && <span className="text-gray-600 ml-1">·</span>}
               </span>
             ))}
           </div>
